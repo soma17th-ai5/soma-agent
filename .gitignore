@@ -1,0 +1,26 @@
+# OMC (oh-my-claudecode) local state
+.omc/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Env
+.env
+.env.local
+*.local
+
+# Logs
+*.log
+
+# Temp
+/tmp/
+*.tmp
