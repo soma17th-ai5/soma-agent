@@ -19,7 +19,7 @@ jobs:
 
       # Java/Kotlin: ci.yml에서 빌드 후 실행하려면 별도 job으로 나누거나, 여기서 빌드 후 스캔
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@v3
+        uses: SonarSource/sonarcloud-github-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         # 프로젝트 루트에 sonar-project.properties 있으면 자동 사용.
