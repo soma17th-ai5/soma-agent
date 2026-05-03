@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    image: soma-agent-app:latest
+    container_name: soma-agent-app
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - ENV=local
+      - API_KEY=${API_KEY}
+    volumes:
+      - .:/app
+    restart: always
