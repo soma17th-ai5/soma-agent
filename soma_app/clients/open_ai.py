@@ -31,7 +31,7 @@ class OpenAIClient:
             raise OpenAIException(f"Embedding failed: {e}")
 
     @retry(tries=5, delay=1, backoff=2, exceptions=APIConnectionError)
-    async def generate(self, messages: List[str], model: str = "solar-1-mini-chat", **kwargs) -> str:
+    async def generate(self, messages: List[dict], model: str = "solar-1-mini-chat", **kwargs) -> str:
         logger.info(f"Generating completion for message: {messages}, model: {model}")
         try:
             response = await self.client.chat.completions.create(
@@ -43,11 +43,11 @@ class OpenAIClient:
 
             return response.choices[0].message.content
         except Exception as e:
-            logger.error(e)
-            raise OpenAIException(f"Completion failed: {e}")
+            logger.error(f"LLM Completion failed: {e}")
+            raise OpenAIException("AI 서비스 요청 중 내부 오류가 발생했습니다.")
 
     @retry(tries=5, delay=1, backoff=2, exceptions=APIConnectionError)
-    async def stream_generate(self, messages: List[str], model: str = "solar-1-mini-chat", **kwargs) -> AsyncGenerator[str, None]:
+    async def stream_generate(self, messages: List[dict], model: str = "solar-1-mini-chat", **kwargs) -> AsyncGenerator[str, None]:
         logger.info(f"Generating stream completion for messages: {messages}, model: {model}")
         try:
             response = await self.client.chat.completions.create(
@@ -64,5 +64,5 @@ class OpenAIClient:
                 else:
                     continue
         except Exception as e:
-            logger.error(e)
-            raise OpenAIException(f"Completion failed: {e}")
+            logger.error(f"LLM Stream Completion failed: {e}")
+            raise OpenAIException("AI 서비스 요청 중 내부 오류가 발생했습니다.")

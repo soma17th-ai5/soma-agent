@@ -18,8 +18,7 @@ COPY pyproject.toml ./
 # Poetry 설정: 가상환경을 생성하지 않고 시스템 파이썬에 직접 설치
 # (도커 컨테이너 자체가 격리된 환경이므로 가상환경이 불필요)
 RUN poetry config virtualenvs.create false \
-    && poetry install --no-interaction --no-ansi --no-root \
-    && pip install "httpx<0.26"
+    && poetry install --no-interaction --no-ansi --no-root
 
 # 프로젝트 소스 코드 복사
 COPY . .

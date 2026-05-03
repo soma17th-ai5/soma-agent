@@ -62,19 +62,25 @@ class SomaActionResponse(BaseModel):
 class SomaSource(BaseModel):
     title: str
     url: Optional[str] = None
-    mentoringId: Optional[str] = None
+    mentoring_id: Optional[str] = Field(None, alias="mentoringId")
     date: Optional[str] = None
     time: Optional[str] = None
 
+    class Config:
+        populate_by_name = True
+
 class SomaSuggestedAction(BaseModel):
-    actionType: SomaActionType
+    action_type: SomaActionType = Field(..., alias="actionType")
     label: str
     payload: Dict[str, Any]
+
+    class Config:
+        populate_by_name = True
 
 class SomaAgentResponse(BaseModel):
     answer: str
     sources: List[SomaSource] = Field(default_factory=list)
-    suggestedActions: List[SomaSuggestedAction] = Field(default_factory=list, alias="suggestedActions")
+    suggested_actions: List[SomaSuggestedAction] = Field(default_factory=list, alias="suggestedActions")
     source_type: Optional[SomaSourceType] = None # 내부 참조용
 
     class Config:
@@ -82,4 +88,4 @@ class SomaAgentResponse(BaseModel):
 
 class SomaChatRequest(BaseModel):
     message: str = Field(..., description="사용자 질문")
-    chatSessionId: Optional[str] = Field(None, description="채팅 세션 ID")
+    chat_session_id: Optional[str] = Field(None, alias="chatSessionId", description="채팅 세션 ID")

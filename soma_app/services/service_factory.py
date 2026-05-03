@@ -4,7 +4,7 @@ from soma_app.clients import OpenAIClient, UpstageClient
 from soma_app.services import ChatService, EmbeddingService
 
 class ServiceFactory:
-    base_urls: Dict[str, OpenAIClient] = {
+    base_urls: Dict[str, str] = {
         'solar': "https://api.upstage.ai/v1/solar"
     }
 
@@ -14,7 +14,7 @@ class ServiceFactory:
             open_ai_client=OpenAIClient(base_url=cls.base_urls[client_name]))
 
     @classmethod
-    def get_embedding_service(cls, client_name: str = 'solar') -> ChatService:
+    def get_embedding_service(cls, client_name: str = 'solar') -> EmbeddingService:
         return EmbeddingService(
             open_ai_client=OpenAIClient(base_url=cls.base_urls[client_name]),
             upstage_client=UpstageClient(base_url=cls.base_urls[client_name]))

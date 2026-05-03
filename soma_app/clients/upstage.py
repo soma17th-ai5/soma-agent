@@ -8,7 +8,7 @@ from soma_app.models.schemas import LayoutAnalysisResult
 
 class UpstageClient:
     def __init__(self, base_url: str):
-        self.base_url = "https://api.upstage.ai"
+        self.base_url = base_url
         self.api_key = config.API_KEY
 
     async def layout_analysis(self, file: BytesIO) -> LayoutAnalysisResult:

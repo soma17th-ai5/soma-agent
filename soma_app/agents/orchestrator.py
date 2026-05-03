@@ -17,7 +17,7 @@ class SomaOrchestrator:
     Soma Agent의 의도를 분석하고 적절한 툴(Mock)을 호출하는 메인 컨트롤러
     """
     def __init__(self):
-        self.solar_client = OpenAIClient(base_url="https://api.upstage.ai/v1/solar")
+        self.solar_client = ServiceFactory.get_chat_service().open_ai_client
         self.embedding_service = ServiceFactory.get_embedding_service()
 
     async def classify_intent(self, query: str) -> Dict[str, Any]:
@@ -64,7 +64,7 @@ class SomaOrchestrator:
             for n in notices:
                 sources.append(SomaSource(title=n.title, date=n.date, url=n.url or "https://swmaestro.org/"))
             suggested_actions.append(SomaSuggestedAction(
-                actionType=SomaActionType.CALENDAR_ADD,
+                action_type=SomaActionType.CALENDAR_ADD,
                 label="주요 일정 캘린더 등록",
                 payload={"noticeId": notices[0].id}
             ))
@@ -78,14 +78,14 @@ class SomaOrchestrator:
             for m in mentorings:
                 sources.append(SomaSource(
                     title=m.title, 
-                    mentoringId=m.id, 
+                    mentoring_id=m.id, 
                     date=m.start_at.strftime("%Y-%m-%d"),
                     time=m.start_at.strftime("%H:%M"),
                     url="https://swmaestro.org/"
                 ))
             if mentorings:
                 suggested_actions.append(SomaSuggestedAction(
-                    actionType=SomaActionType.APPLY,
+                    action_type=SomaActionType.APPLY,
                     label=f"{mentorings[0].title} 신청하기",
                     payload={"mentoringId": mentorings[0].id}
                 ))
@@ -99,10 +99,16 @@ class SomaOrchestrator:
             sources.append(SomaSource(title="멘토링 신청 시스템", url="https://swmaestro.org/"))
             if result.success:
                 suggested_actions.append(SomaSuggestedAction(
-                    actionType=SomaActionType.CALENDAR_ADD,
+                    action_type=SomaActionType.CALENDAR_ADD,
                     label="신청한 멘토링 일정 등록",
                     payload={"mentoringId": mentoring_id}
                 ))
+
+        elif intent == SomaIntent.MENTORING_CANCEL:
+            mentoring_id = entities.get("keyword") or "m1"
+            context_data = f"멘토링 취소 요청: {mentoring_id}번 멘토링 취소 처리가 접수되었습니다."
+            source_type = SomaSourceType.OPEN_SOMA
+            sources.append(SomaSource(title="멘토링 관리 시스템", url="https://swmaestro.org/"))
 
         elif intent == SomaIntent.MY_STATUS:
             # 4-1. [Tool Calling] 해당 의도에 맞는 Mock 서비스 함수 호출하여 Context 획득
@@ -110,7 +116,7 @@ class SomaOrchestrator:
             if applied:
                 context_data = "현재 신청된 멘토링 내역:\n" + "\n".join([f"- {m.title} ({m.mentor_name} 멘토)" for m in applied])
                 for m in applied:
-                    sources.append(SomaSource(title=m.title, mentoringId=m.id, date=m.start_at.strftime("%Y-%m-%d")))
+                    sources.append(SomaSource(title=m.title, mentoring_id=m.id, date=m.start_at.strftime("%Y-%m-%d")))
             else:
                 context_data = "현재 신청된 멘토링 내역이 없습니다."
             source_type = SomaSourceType.OPEN_SOMA
@@ -124,18 +130,22 @@ class SomaOrchestrator:
             sources.append(SomaSource(title="Webex 부산 연수생 소통방", url="https://webex.com/"))
 
         # 6. [Orchestrator] 획득한 Context(툴 실행 결과)를 System Prompt에 주입하여 최종 자연어 답변(LLM) 생성
-        system_prompt = SOMA_AGENT_SYSTEM_PROMPT.format(context=context_data)
-        answer = await self.solar_client.generate(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": query}
-            ]
-        )
+        try:
+            system_prompt = SOMA_AGENT_SYSTEM_PROMPT.format(context=context_data)
+            answer = await self.solar_client.generate(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": query}
+                ]
+            )
+        except Exception as e:
+            logger.error(f"Final answer generation failed: {e}")
+            answer = "죄송합니다. 답변을 생성하는 도중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
 
         return SomaAgentResponse(
             answer=answer,
             sources=sources,
-            suggestedActions=suggested_actions,
+            suggested_actions=suggested_actions,
             source_type=source_type
         )
 
