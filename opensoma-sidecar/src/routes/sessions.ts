@@ -44,6 +44,8 @@ sessionsRouter.post('/', async (c) => {
   const { username, password } = parsed.data
   const client = new SomaClient({ username, password })
 
+  // 호출부에서 명시적으로 INVALID_CREDENTIALS 매핑.
+  // (글로벌 error_mapping은 문자열 휴리스틱을 쓰지 않음 — false positive 회피)
   try {
     await client.login()
   } catch (err) {

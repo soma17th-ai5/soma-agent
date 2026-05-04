@@ -25,7 +25,13 @@ export function createApp(): Hono {
   app.onError((err, c) => {
     const e = toSidecarError(err)
     if (e.status >= 500) {
-      console.error('[sidecar] error', { code: e.code, message: e.message, cause: err })
+      // err 객체 전체를 직렬화하면 SomaHttp 내부 상태(쿠키 등)가 새어나갈 수 있음.
+      // message + stack 만 기록.
+      console.error('[sidecar] error', {
+        code: e.code,
+        message: e.message,
+        stack: err instanceof Error ? err.stack : undefined,
+      })
     }
     return c.json({ code: e.code, message: e.message }, e.status as never)
   })

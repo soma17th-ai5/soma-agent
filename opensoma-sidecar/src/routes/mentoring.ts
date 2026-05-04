@@ -70,8 +70,8 @@ mentoringRouter.post('/:id/apply', async (c) => {
   await client.mentoring.apply(id)
 
   const history = await client.mentoring.history({ page: 1 })
-  const matched =
-    history.items.find((item) => item.url?.includes(`qustnrSn=${id}`)) ?? history.items[0]
+  const exactMatch = history.items.find((item) => item.url?.includes(`qustnrSn=${id}`))
+  const matched = exactMatch ?? history.items[0]
 
   if (!matched) {
     throw new SidecarError(
@@ -79,6 +79,15 @@ mentoringRouter.post('/:id/apply', async (c) => {
       'APPLY_SN_UNRESOLVED',
       'application succeeded but apply_sn could not be resolved from history',
     )
+  }
+  if (!exactMatch) {
+    // 휴리스틱 fallback — race나 history 정렬 변동 시 잘못된 항목을 선택할 수 있음.
+    // 운영자가 모니터링할 수 있도록 경고 로그 남김.
+    console.warn('[sidecar] apply_sn fallback used (no exact url match)', {
+      qustnr_sn: id,
+      candidate_apply_sn: matched.id,
+      candidate_title: matched.title,
+    })
   }
 
   return c.json({

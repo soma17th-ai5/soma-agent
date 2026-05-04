@@ -11,7 +11,8 @@ services:
     expose:
       - "3000"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/healthz"]
+      # alpine에 curl이 없어 bun 자체 fetch로 검증
+      test: ["CMD", "bun", "-e", "const r = await fetch('http://localhost:3000/healthz'); process.exit(r.ok ? 0 : 1)"]
       interval: 10s
       timeout: 5s
       retries: 5

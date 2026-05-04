@@ -131,9 +131,11 @@ describe('error mapping', () => {
     expect(mapped.message).toBe('network broken')
   })
 
-  it('should_map_not_found_message_to_404', () => {
-    const mapped = toSidecarError(new Error('mentoring not found'))
-    expect(mapped.status).toBe(404)
-    expect(mapped.code).toBe('NOT_FOUND')
+  it('should_not_use_string_heuristics_for_404', () => {
+    // false positive 방지를 위해 'not found' 문자열은 패턴 매칭 안 함.
+    // 라우트에서 명시적으로 SidecarError(404, 'NOT_FOUND', ...)를 throw해야 함.
+    const mapped = toSidecarError(new Error('settings not found in cache'))
+    expect(mapped.status).toBe(502)
+    expect(mapped.code).toBe('UPSTREAM_ERROR')
   })
 })
