@@ -1,6 +1,21 @@
-# SomaAgent 로컬/개발 환경 컴포지션.
-# 운영 배포는 별도. opensoma-sidecar 컨테이너는 #8에서 추가됨.
+# SomaAgent 로컬/개발 환경 컴포지션. 운영 배포는 별도.
 services:
+  opensoma-sidecar:
+    build:
+      context: ../opensoma-sidecar
+      dockerfile: Dockerfile
+    environment:
+      SIDECAR_PORT: 3000
+      OPERATOR_SOMA_USERNAME: ${OPERATOR_SOMA_USERNAME:-}
+      OPERATOR_SOMA_PASSWORD: ${OPERATOR_SOMA_PASSWORD:-}
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   mysql:
     image: mysql:8
     environment:
@@ -35,6 +50,8 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_started
+      opensoma-sidecar:
+        condition: service_healthy
     environment:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
