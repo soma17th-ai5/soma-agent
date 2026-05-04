@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install run test lint format \
+.PHONY: help install run test lint format _check.uv \
         db.new db.up db.up.one db.down db.down.to db.history db.current db.reset \
         compose.up compose.down compose.logs
 
