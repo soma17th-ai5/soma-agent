@@ -24,3 +24,36 @@ Thumbs.db
 # Temp
 /tmp/
 *.tmp
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+*.egg
+build/
+dist/
+
+# Test/Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# uv
+uv.lock.tmp
+
+# Docker
+docker-compose.override.yml
+
+# Sidecar (Bun)
+opensoma-sidecar/node_modules/
+opensoma-sidecar/dist/
+opensoma-sidecar/.bun/
