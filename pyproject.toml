@@ -23,6 +23,7 @@ dependencies = [
     "tenacity>=9.0",
     "beautifulsoup4>=4.12",
     "tomli>=2.0",
+    "pypdf>=5.1",
 ]
 
 [dependency-groups]
@@ -33,6 +34,7 @@ dev = [
     "ruff>=0.7",
     "mypy>=1.13",
     "types-beautifulsoup4>=4.12",
+    "respx>=0.21",
 ]
 
 [build-system]
@@ -53,7 +55,9 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
 ignore = ["E501", "B008"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101"]
+# N802: 테스트 함수 이름은 SPEC convention `should_<behavior>_when_<condition>` 사용 — camelCase 허용.
+# N806: 테스트 fixture 안의 SessionLocal 등 SQLAlchemy 관용 명명 허용.
+"tests/*" = ["S101", "N802", "N806"]
 "app/db/migrations/versions/*" = ["E", "W"]
 
 [tool.pytest.ini_options]

@@ -237,14 +237,21 @@ domain/ 은 모든 레이어에서 import 가능 (역방향 import 금지)
 ### 3.1 MySQL 스키마
 
 #### `users`
-| 컬럼 | 타입 | 비고 |
-|---|---|---|
-| `id` | BIGINT PK AUTO_INCREMENT | 내부 ID |
-| `soma_user_id` | VARCHAR(64) UNIQUE NOT NULL | OpenSoma `whoami()` 식별자 |
-| `email` | VARCHAR(255) NULLABLE | sidecar `whoami()`에서 가능 시 추출 |
-| `role` | ENUM('TRAINEE','MENTOR','EXPERT','OPERATOR') NOT NULL | 기본 'TRAINEE' |
+
+OpenSoma `whoami()` 응답: `{userId, userNm, userNo, userGb}`.
+**`userId`는 로그인 username(=이메일)** 이고 별도의 시스템 ID가 아님. `userNo`가 32자 hex GUID 형태의 내부 ID.
+
+| 컬럼 | 타입 | OpenSoma 필드 | 비고 |
+|---|---|---|---|
+| `id` | BIGINT PK AUTO_INCREMENT | — | 우리 내부 PK |
+| `soma_user_id` | VARCHAR(255) UNIQUE NOT NULL | `userId` | 로그인 username (이메일 형태) |
+| `user_no` | CHAR(32) UNIQUE NOT NULL | `userNo` | OpenSoma 내부 GUID (hex) |
+| `user_name` | VARCHAR(100) | `userNm` | 한글 이름 |
+| `role` | ENUM('TRAINEE','MENTOR','EXPERT','OPERATOR') NOT NULL | `userGb` 매핑 | `C`→TRAINEE, `T`→MENTOR. EXPERT/OPERATOR는 운영자 수동 부여 |
 | `created_at` | DATETIME NOT NULL |
 | `updated_at` | DATETIME NOT NULL |
+
+> `email` 컬럼은 별도로 두지 않음. `soma_user_id` 가 곧 이메일 (실측 결과 `sueelly@naver.com` 형태).
 
 #### `notices`
 OpenSoma `NoticeListItem`/`NoticeDetail` 매핑. 첨부 별도 필드 없으므로 content HTML에서 파싱한다.
@@ -255,8 +262,8 @@ OpenSoma `NoticeListItem`/`NoticeDetail` 매핑. 첨부 별도 필드 없으므�
 | `notice_id` | BIGINT UNIQUE NOT NULL | `id` | OpenSoma는 number |
 | `title` | VARCHAR(500) | `title` |
 | `author` | VARCHAR(200) | `author` |
-| `created_at_text` | VARCHAR(50) | `createdAt` | 원문 그대로(파싱 규칙 미문서화) |
-| `posted_at` | DATETIME NULLABLE | (파싱) | KST 정규화 시도, 실패 시 NULL |
+| `created_at_text` | VARCHAR(50) | `createdAt` | 실측 포맷: `"YYYY.MM.DD HH:MM:SS"` (점 구분, KST) |
+| `posted_at` | DATETIME NULLABLE | (파싱) | `created_at_text`를 KST로 정규화. 실패 시 NULL |
 | `content_html` | MEDIUMTEXT | `content` | sanitize 안 함 |
 | `content_text` | MEDIUMTEXT | (파생) | HTML 태그 제거된 plain text. RAG 인덱싱용 |
 | `detail_url` | VARCHAR(1000) | (구성) |
@@ -276,29 +283,54 @@ OpenSoma `NoticeListItem`/`NoticeDetail` 매핑. 첨부 별도 필드 없으므�
 | `extracted_at` | DATETIME NULLABLE |
 
 #### `mentorings`
-OpenSoma `MentoringListItem`/`MentoringDetail` 매핑. 카테고리·태그·정원 등 필드는 OpenSoma에 **존재하지 않으므로** 보강이 필요하면 description에서 LLM 키워드 추출(v2).
+
+실측 응답 (Q1=확정):
+```json
+{
+  "id": 10786,
+  "title": "...",
+  "type": "멘토 특강",
+  "registrationPeriod": {"start": "2026-04-27", "end": "2026-05-31"},
+  "sessionDate": "2026-05-31",
+  "sessionTime": {"start": "20:00", "end": "22:00"},
+  "attendees": {"current": 20, "max": 20},
+  "approved": true,
+  "status": "마감",
+  "author": "...",
+  "createdAt": "2026-04-26"
+}
+```
+
+내가 처음에 가정한 단순 문자열들이 모두 **객체** 또는 boolean이었음. 이에 맞춰 컬럼 분할.
 
 | 컬럼 | 타입 | OpenSoma 필드 | 비고 |
 |---|---|---|---|
-| `id` | BIGINT PK |
-| `mentoring_id` | BIGINT UNIQUE NOT NULL | `id` |
+| `id` | BIGINT PK | — | 우리 PK |
+| `mentoring_id` | BIGINT UNIQUE NOT NULL | `id` | OpenSoma number |
 | `title` | VARCHAR(500) | `title` |
-| `mentoring_type` | ENUM('public','lecture') | `type` |
-| `registration_period` | VARCHAR(100) | `registrationPeriod` | 원문 문자열 |
-| `session_date` | VARCHAR(50) | `sessionDate` | 원문 문자열 |
-| `session_time` | VARCHAR(50) | `sessionTime` | 원문 문자열 |
-| `session_started_at` | DATETIME NULLABLE | (파생) | sessionDate+sessionTime 파싱 |
-| `attendees_text` | VARCHAR(100) | `attendees` | 정원/현재 — 원문 |
-| `approved_text` | VARCHAR(50) | `approved` | 승인 표시 — 원문 |
-| `mentoring_status` | ENUM('OPEN','CLOSED') | `status` | OpenSoma `'open'`/`'closed'` 매핑 |
+| `mentoring_type` | VARCHAR(50) | `type` | 한글값 (예: `"멘토 특강"`, `"자유 멘토링"`) — ENUM 아님 |
+| `registration_start_at` | DATETIME | `registrationPeriod.start` | `YYYY-MM-DD` 파싱 |
+| `registration_end_at` | DATETIME | `registrationPeriod.end` |
+| `session_date` | DATE | `sessionDate` | `YYYY-MM-DD` |
+| `session_start_time` | TIME | `sessionTime.start` | `HH:MM` |
+| `session_end_time` | TIME | `sessionTime.end` |
+| `session_started_at` | DATETIME NULLABLE | (파생) | `session_date + session_start_time` |
+| `attendees_current` | INT | `attendees.current` |
+| `attendees_max` | INT | `attendees.max` |
+| `approved` | BOOLEAN | `approved` |
+| `mentoring_status` | VARCHAR(20) | `status` | 한글값 (`"마감"`, `"모집중"`, `"진행중"` 등 — ENUM 아님) |
 | `author` | VARCHAR(200) | `author` |
-| `created_at_text` | VARCHAR(50) | `createdAt` |
+| `created_at_text` | VARCHAR(50) | `createdAt` | 실측 포맷: `"YYYY-MM-DD"` (notice는 `"."` 구분, mentoring은 `"-"` — 다름!) |
 | `content_html` | MEDIUMTEXT NULLABLE | `content` (detail에만) |
 | `venue` | VARCHAR(500) NULLABLE | `venue` (detail에만) |
 | `detail_url` | VARCHAR(1000) |
 | `content_hash` | CHAR(64) |
 | `last_fetched_at` | DATETIME |
 | `is_active` | BOOLEAN DEFAULT TRUE |
+
+> **주의**: `mentoring_type` 과 `mentoring_status` 는 OpenSoma 응답값이 한글 자유문자열이라 ENUM으로 강제하지 않음. 새 값 등장 시 자동 흡수.
+
+> 카테고리·태그·정원 등 우리가 가상으로 가정했던 필드는 OpenSoma에 없음. 분야 검색 품질이 부족하면 description LLM 키워드 추출은 v2로.
 
 #### `mentoring_applicants`
 멘토링 상세에 포함되는 신청자 목록. `MentoringDetail.applicants[]` 매핑. 익명화 적용.
@@ -398,7 +430,7 @@ OpenSoma `MentoringListItem`/`MentoringDetail` 매핑. 카테고리·태그·정
 ```python
 {
   "collection_name": "soma_chunks",
-  "vector_size": 4096,           # Solar Embedding 차원에 맞춤 (확정 필요)
+  "vector_size": 4096,           # Solar embedding-passage/query 차원 (실측 확정)
   "distance": "Cosine",
   "payload_schema": {
     "chunk_id": "keyword",         # UUID
@@ -482,16 +514,21 @@ class Tool(Protocol):
 | "공지 N번 자세히" | `opensoma.notice.get` | — |
 | "백엔드 멘토링 찾아줘" (의미 검색) | `knowledge.search(source_types=["MENTORING"])` | 사용자 의향 시 `opensoma.mentoring.get` |
 | "지금 신청 가능한 멘토링" (현재 상태) | `opensoma.mentoring.list` | — |
-| "이거 신청해줘" | `opensoma.mentoring.apply` (`needs_confirmation`) | 확인 후 `apply` + `calendar.invite.create` |
+| "이거 신청해줘" | `opensoma.mentoring.get` (재검증) | `ActionProposal { MENTORING_APPLY }` 반환. 사용자 확인 후 `/actions/execute`로 실제 실행 |
 | "내 접수 내역" | `opensoma.application.history` | — |
 | "Webex에서 X 얘기 정리" | `knowledge.search(source_types=["WEBEX_MESSAGE"])` | — |
 
 ### 4.4 액션 실행 정책
 
-- `opensoma.mentoring.apply` / `.cancel` 호출 직전에 반드시 `opensoma.mentoring.get` 으로 상태 재검증.
-- 실행 전 **사용자 확인이 필요한 액션**은 `ToolResult.status = "needs_confirmation"` 으로 `ActionProposal` 만 반환. 실제 호출은 다음 턴에서 사용자가 확인 후 수행.
-- MVP 정책: 멘토링 신청/취소는 모두 `needs_confirmation` 한 번 거침.
-- 신청 성공 시 `calendar.invite.create` (mock) 자동 후속 호출 — 캘린더 실패는 신청 롤백 안 함, `ChatMessage`에 부분 실패로 표시.
+도메인 액션(신청/취소)은 채팅과 분리된 전용 엔드포인트 `POST /api/v1/actions/execute`로 위임한다 (§6.4). 채팅 응답에서는 *제안만* 하고 직접 실행하지 않는다.
+
+- **`/chat` 측**: router가 신청/취소 의도를 감지해도 `opensoma.mentoring.apply` / `.cancel` tool은 호출하지 않는다. 대신 `opensoma.mentoring.get`으로 현재 상태를 가져와 `ActionProposal { actionType, label, payload }`을 채팅 응답의 `actions[]`에 담아 반환.
+- **`/actions/execute` 측**: 사용자가 카드의 액션 버튼을 누르면 프론트가 받은 `ActionProposal` 페이로드를 그대로 이 엔드포인트로 보낸다. 백엔드는:
+  1. `opensoma.mentoring.get`으로 직전 상태 재검증 (`OPEN`/정원 미달 등)
+  2. `opensoma.mentoring.apply` / `.cancel` 호출
+  3. `MENTORING_APPLY` 성공 시 `calendar.invite.create` (mock) 후속 호출 — 캘린더 실패는 신청 롤백 안 함, 응답 `data.calendarInvite.status = "failed"`로 부분 실패 표시
+- **확인 모달**: `requiresConfirmation: true`인 경우 프론트가 자체 모달로 사용자 확인 → 확인 시에만 `/actions/execute` 호출. 백엔드는 두 번 묻지 않는다.
+- **카드 직접 클릭**: 채팅을 거치지 않고 멘토링 카드 등 UI에서 바로 신청 버튼을 누르는 경우도 동일하게 `/actions/execute` 호출. 프론트는 `mentoringId`만 알면 됨 (취소의 경우 백엔드가 `applications` 캐시에서 `applySn`+`qustnrSn` 매핑).
 
 ---
 
@@ -589,18 +626,26 @@ type Artifact = {
   content?: string;
 };
 
+type ActionType = "MENTORING_APPLY" | "MENTORING_CANCEL";
+
 type ActionProposal = {
-  type: string;
-  label: string;
-  payload: Record<string, unknown>;
-  requiresConfirmation: boolean;
+  actionType: ActionType;
+  label: string;                          // 사용자 노출 버튼 라벨
+  payload: ActionPayload;                 // /actions/execute에 그대로 재전송
+  requiresConfirmation: boolean;          // true면 프론트가 자체 확인 모달 표시
+  expiresAt?: string;                     // ISO 8601, 제안 유효 시각 (선택)
 };
 
+type ActionPayload =
+  | { mentoringId: string }                                    // MENTORING_APPLY
+  | { mentoringId: string }                                    // MENTORING_CANCEL — 백엔드가 applications 캐시에서 applySn+qustnrSn 매핑
+  | { mentoringId: string; applySn: number; qustnrSn: number }; // MENTORING_CANCEL — 매핑 정보를 이미 알고 있을 때
+
 type ActionResult = {
-  type: string;
+  actionType: ActionType;
   status: "success" | "failed";
   message: string;
-  payload?: Record<string, unknown>;
+  data?: Record<string, unknown>;
 };
 
 type ToolError = {
@@ -630,31 +675,129 @@ type ChatUIBlock =
   | { type: "action_result"; results: ActionResult[] };
 ```
 
-### 6.3 HTTP 엔드포인트
+### 6.3 HTTP 엔드포인트 — 채팅
 
 ```
 POST /api/v1/chat
 Headers:
-  X-Soma-Auth: <OpenSoma 세션 헤더 원본>
-  X-Session-Id: <UUID, 클라가 발급해 유지>
+  X-Soma-Session: <session_id>          # /auth/login에서 발급
+  X-Session-Id:   <UUID, 프론트가 발급해 유지>
 Body:
 {
   "message": "이번 주 백엔드 멘토링 찾아줘",
-  "candidates_context"?: [...]   // 직전 후보 목록 그대로 재전송
+  "candidates_context"?: [...]          // 직전 후보 목록 그대로 재전송
 }
 Response: ChatMessage
 ```
 
-#### 에러 응답
+> 채팅에서는 신청/취소를 *제안만* 한다. 실제 실행은 §6.4 `/actions/execute` 호출.
+
+### 6.4 HTTP 엔드포인트 — 액션 실행
+
+도메인 액션(신청/취소)을 명시적으로 실행하는 전용 엔드포인트. 채팅 응답의 `ActionProposal`을 그대로 페이로드로 사용하거나, 카드 UI에서 직접 호출 가능.
+
+```
+POST /api/v1/actions/execute
+Headers:
+  X-Soma-Session: <session_id>
+  X-Session-Id:   <UUID>
+Body:
+{
+  "actionType": "MENTORING_APPLY",       // ActionType enum
+  "payload": { "mentoringId": "M123" }   // ActionPayload
+}
+```
+
+**200 응답: `ActionExecutionResponse`**
+
+```ts
+type ActionExecutionResponse = {
+  actionType: ActionType;
+  status: "success" | "failed";
+  message: string;                      // 사용자 노출 메시지 (한국어)
+  data?: {
+    application?: {                     // MENTORING_APPLY 성공 시
+      applySn: number;
+      qustnrSn: number;
+      mentoringId: string;
+      title: string;
+      sessionStartedAt?: string;
+    };
+    calendarInvite?: {                  // MENTORING_APPLY 성공 시 부수 결과
+      status: "created" | "skipped" | "failed";
+      eventId?: string;                 // mock에서는 UUID
+      errorMessage?: string;
+    };
+  };
+  error?: ToolError;                    // status=failed 일 때
+  trace_id: string;
+};
+```
+
+**처리 절차** (백엔드)
+
+1. `actionType` 디스패치 → 해당 tool 매핑
+2. `opensoma.mentoring.get`으로 직전 상태 재검증 — 닫힘/마감/이미신청 등 → `409 CONFLICT` + `error.code`
+3. `MENTORING_CANCEL` + payload에 `applySn` 없을 시 `applications` 캐시(없으면 채워서) 매핑
+4. 실제 tool 호출 (`opensoma.mentoring.apply` / `.cancel`)
+5. `MENTORING_APPLY` 성공 시 `calendar.invite.create` (mock) 후속 호출 — 실패해도 신청 롤백 안 함
+6. 신청/취소 직후 해당 사용자 `applications` 행 삭제 (다음 조회 시 재채움)
+
+**액션별 페이로드/응답 요약**
+
+| `actionType` | 페이로드 | 성공 응답 `data` |
+|---|---|---|
+| `MENTORING_APPLY` | `{ mentoringId }` | `{ application, calendarInvite }` |
+| `MENTORING_CANCEL` | `{ mentoringId }` 또는 `{ mentoringId, applySn, qustnrSn }` | `{ application: {…cancelled} }` |
+
+### 6.5 HTTP 엔드포인트 — 인증/상태
+
+```
+GET /api/v1/auth/status
+Headers: X-Soma-Session
+Response 200:
+{
+  "authenticated": true,
+  "user": { "somaUserId": "...", "email": "...", "role": "TRAINEE" },
+  "integrations": {
+    "opensoma": { "status": "connected" },
+    "webex":    { "status": "operator_managed" },   // 운영자 토큰이라 사용자별 연동 없음
+    "calendar": { "status": "mock" }
+  }
+}
+```
+
+> 페이지 새로고침 후 세션 유효성 확인용. 만료 시 `401` + `X-Soma-Session-Expired: true`.
+
+### 6.6 HTTP 엔드포인트 — 시스템 상태
+
+```
+GET /api/v1/system/sync-info
+Response 200:
+{
+  "jobs": {
+    "notices_sync":    { "lastRunAt": "...", "lastSuccessAt": "...", "lastError": null },
+    "mentorings_sync": { "lastRunAt": "...", "lastSuccessAt": "...", "lastError": null },
+    "webex_sync":      { "lastRunAt": "...", "lastSuccessAt": "...", "lastError": "..." }
+  }
+}
+```
+
+> `sync_state` 테이블(§3.1)을 그대로 직렬화. 인증 불필요, 비공개 정보 아님.
+
+### 6.7 에러 응답
+
 표준 형식 `{ code, message, details? }`. (CLAUDE.md `.claude/rules/api.md` 준수.)
 
-| HTTP | code | 의미 |
-|---|---|---|
-| 401 | `SOMA_AUTH_REQUIRED` | X-Soma-Auth 누락/만료 |
-| 403 | `SOMA_AUTH_REJECTED` | OpenSoma가 거부 |
-| 422 | `INVALID_REQUEST` | 메시지 본문 검증 실패 |
-| 429 | `RATE_LIMITED` | Solar/Webex rate limit |
-| 503 | `UPSTREAM_UNAVAILABLE` | OpenSoma/Webex 다운 |
+| HTTP | code | 의미 | 적용 엔드포인트 |
+|---|---|---|---|
+| 401 | `SOMA_AUTH_REQUIRED` | 세션 누락/만료 (`X-Soma-Session-Expired: true` 헤더 동봉) | 모두 |
+| 403 | `SOMA_AUTH_REJECTED` | OpenSoma가 거부 | 모두 |
+| 409 | `ACTION_CONFLICT` | 멘토링 마감/이미 신청 등 상태 충돌 | `/actions/execute` |
+| 422 | `INVALID_REQUEST` | 본문 검증 실패 | 모두 |
+| 422 | `INVALID_ACTION_TYPE` | 알 수 없는 `actionType` | `/actions/execute` |
+| 429 | `RATE_LIMITED` | Solar/Webex rate limit | `/chat` |
+| 503 | `UPSTREAM_UNAVAILABLE` | OpenSoma/Webex 다운 | 모두 |
 
 ---
 
@@ -824,8 +967,11 @@ QDRANT_COLLECTION=soma_chunks
 
 # Upstage Solar
 SOLAR_API_KEY=
-SOLAR_LLM_MODEL=solar-pro                # 확정 필요
-SOLAR_EMBEDDING_MODEL=solar-embedding-1-large  # 확정 필요
+# 실측 (2026-05-05): /v1/models로 확인. solar-pro는 latest로 자동 매핑.
+SOLAR_LLM_MODEL=solar-pro
+# Upstage embedding은 passage(저장용)와 query(검색용)가 분리됨. 둘 다 4096차원.
+SOLAR_EMBEDDING_PASSAGE_MODEL=embedding-passage
+SOLAR_EMBEDDING_QUERY_MODEL=embedding-query
 
 # OpenSoma Sidecar (FastAPI 앱이 호출하는 내부 URL)
 OPENSOMA_SIDECAR_URL=http://opensoma-sidecar:3000
@@ -865,9 +1011,13 @@ OPERATOR_SOMA_PASSWORD=         # 노출 금지, 시크릿 매니저에서 주�
 
 - [ ] **OpenSoma sidecar PoC** (Bun + TS SDK, HTTP 인터페이스 §3.3 구현)
 - [ ] FastAPI 앱 + `POST /api/v1/chat` 엔드포인트
-- [ ] `POST /auth/login` → sidecar `/sessions` 위임 + `users` upsert
+- [ ] `POST /api/v1/auth/login` → sidecar `/sessions` 위임 + `users` upsert
+- [ ] `POST /api/v1/auth/logout`
+- [ ] `GET /api/v1/auth/status` (세션/연동 상태)
+- [ ] `POST /api/v1/actions/execute` — `MENTORING_APPLY` / `MENTORING_CANCEL` 디스패처
+- [ ] `GET /api/v1/system/sync-info` (sync_state 직렬화)
 - [ ] `X-Soma-Session` 핸들 기반 인증 미들웨어
-- [ ] LangGraph 그래프 (router → tool_executor ≤2 → synthesizer)
+- [ ] LangGraph 그래프 (router → tool_executor ≤2 → synthesizer) — 채팅 응답에서는 신청/취소 직접 실행 안 함, `ActionProposal`로만 반환
 - [ ] Tool 8종 구현 (`knowledge.search`, opensoma 6종, calendar mock)
 - [ ] 공지/멘토링/Webex 동기화 잡 (APScheduler)
 - [ ] 공지 content HTML → 첨부 anchor 파싱 + PDF 텍스트 추출
@@ -875,7 +1025,7 @@ OPERATOR_SOMA_PASSWORD=         # 노출 금지, 시크릿 매니저에서 주�
 - [ ] Qdrant 단일 컬렉션 RAG (`source_type` 메타필터)
 - [ ] Solar LLM 답변 생성
 - [ ] 출처/날짜/공식여부 표시
-- [ ] 멘토링 신청/취소 — `needs_confirmation` + 직전 `.get` 재검증 + cancel ID 2개 처리
+- [ ] `/actions/execute` 신청/취소 — 직전 `.get` 재검증 + cancel ID 2개 자동 매핑 + calendar mock 후속
 - [ ] structlog + trace_id
 - [ ] Docker compose (MySQL + Qdrant + FastAPI + opensoma-sidecar)
 - [ ] 시연 시나리오 5개 pytest 통합 테스트
@@ -904,14 +1054,15 @@ OPERATOR_SOMA_PASSWORD=         # 노출 금지, 시크릿 매니저에서 주�
 
 | # | 항목 | 액션 |
 |---|---|---|
-| 1 | Solar LLM/Embedding 모델명 + Embedding 차원 | D-1 확정 → `SOLAR_*_MODEL` 갱신 + Qdrant `vector_size` 확정 |
-| 2 | **OpenSoma 공지 PDF 첨부 처리** — `NoticeDetail`에 별도 필드 없음 | sidecar PoC에서 `commands/notice.ts` 직접 확인 + content HTML anchor 파싱 정책 확정 |
-| 3 | **Webex 운영자 토큰으로 그룹 룸 히스토리 조회 가능 여부** | 사내 테스트 룸 1개로 `GET /messages?roomId=...` 실측. 안 되면 Compliance Officer 토큰 필요 |
-| 4 | OpenSoma `applySn` ↔ `qustnrSn` 매핑 시점 | apply 응답에서 둘 다 받는지 / mentoring detail에서 추출하는지 sidecar PoC에서 확인 |
-| 5 | sidecar `whoami()` 응답 형태 (email/role 추출 가능 여부) | 미가능 시 `users.email/role` NULL 허용, 운영자 수동 부여 |
-| 6 | OpenSoma 일자/시간 문자열 파싱 규칙 | 응답 샘플 수집 후 정규화 함수 작성 |
+| 1 | ~~Solar LLM/Embedding 모델명 + 차원~~ | ✅ 해결 (2026-05-05): LLM `solar-pro`, embedding `embedding-passage` / `embedding-query`, 차원 4096. `/v1/models` 실측. |
+| 2 | OpenSoma 공지 PDF 첨부 처리 | 부분 해결: SDK는 첨부 별도 필드 없음 (#8 PoC 정적 분석). 첨부 있는 공지 만나면 anchor 패턴 확정. #13에서 BeautifulSoup 파싱 |
+| 3 | Webex 운영자 토큰으로 그룹 룸 히스토리 조회 가능 여부 | 사내 테스트 룸 1개로 `GET /messages?roomId=...` 실측. 안 되면 Compliance Officer 토큰 필요 — #14 첫 단계 |
+| 4 | ~~OpenSoma `applySn` ↔ `qustnrSn` 매핑 시점~~ | ✅ 해결 (#8 PoC): `apply()` 응답 = `Promise<void>`. sidecar가 신청 후 `history()` 한 번 더 호출, `url`의 `qustnrSn=N`로 매칭해 `{apply_sn, qustnr_sn}` 반환 |
+| 5 | ~~sidecar `whoami()` 응답 형태~~ | ✅ 해결 (실측): `{userId, userNm, userNo, userGb}`. email은 별도 필드 없음 — `userId`가 곧 이메일. `users` 스키마에 `user_no` 추가 |
+| 6 | ~~OpenSoma 일자/시간 문자열 파싱 규칙~~ | ✅ 해결 (실측): notice `createdAt`은 `"YYYY.MM.DD HH:MM:SS"` (점), mentoring은 `"YYYY-MM-DD"` (대시). sessionDate/Time/registrationPeriod는 객체. session은 `{start, end}` 분리 |
 | 7 | 운영 시 시크릿 매니저 선택 (AWS SM / GCP SM / Vault) | 인프라 결정 시점에 |
-| 8 | OpenSoma 멘토링 `category`/`tags` 필드 부재 → 분야 검색 품질 | description embedding으로 충분한지 v1 평가 후 LLM 키워드 추출 도입 검토 |
+| 8 | OpenSoma 멘토링 `category`/`tags` 필드 부재 | 실측 확인: `type` 한글값 (`"멘토 특강"` 등) 외 별도 카테고리 없음. 분야 검색 품질이 부족하면 v2에서 LLM 키워드 추출 |
+| 9 | mentoring `type`·`status` 한글 자유문자열 | 실측 확인: ENUM 강제 안 함, VARCHAR로 자유 흡수 (#10 sync 시 enum 매핑 안 함) |
 
 ---
 
@@ -929,6 +1080,18 @@ OPERATOR_SOMA_PASSWORD=         # 노출 금지, 시크릿 매니저에서 주�
 
 ## 14. 변경 이력
 
+- 2026-05-05: 3차 리비전 — 실측 검증 반영 (#8 PoC). (#TBD)
+  - **Solar API 모델 확정**: `solar-pro` (LLM, latest로 자동 매핑), `embedding-passage`/`embedding-query` (저장/검색 분리, 4096차원). 환경변수 `SOLAR_EMBEDDING_MODEL` → `SOLAR_EMBEDDING_PASSAGE_MODEL` + `SOLAR_EMBEDDING_QUERY_MODEL`.
+  - **`users` 스키마 정정**: `email` 컬럼 제거, `soma_user_id`가 곧 이메일/username. `user_no`(GUID hex), `user_name`(한글) 컬럼 추가.
+  - **`mentorings` 스키마 대폭 수정**: 실측 응답이 객체/boolean이라 단순 문자열 컬럼 분할:
+    - `registrationPeriod` → `registration_start_at` / `registration_end_at` (DATETIME)
+    - `sessionTime` → `session_start_time` / `session_end_time` (TIME)
+    - `attendees` → `attendees_current` / `attendees_max` (INT)
+    - `approved` → BOOLEAN
+    - `mentoring_type`·`mentoring_status` 한글 자유문자열이라 VARCHAR (ENUM 아님)
+  - **일자 포맷 차이 명시**: notice `"YYYY.MM.DD HH:MM:SS"` (점), mentoring `"YYYY-MM-DD"` (대시).
+  - **sidecar `apply` 매핑 전략 확정**: `client.mentoring.apply(id)` = `Promise<void>` → sidecar가 신청 직후 `history()` 호출, `url`에서 `qustnrSn=N` 매칭으로 `{apply_sn, qustnr_sn}` 자동 해소.
+  - 검증: docker compose up으로 mysql + qdrant + opensoma-sidecar + app 4종 동시 기동 + healthcheck 통과 확인.
 - 2026-05-05: 초안 작성. (#TBD)
 - 2026-05-05: 1차 리비전. (#TBD)
   - Tool 14개 → 8개로 축소. RAG tool 3개를 `knowledge.search` 단일 tool로 통합 (검색 경로 동일, 메타필터 차이만 존재).
@@ -947,3 +1110,11 @@ OPERATOR_SOMA_PASSWORD=         # 노출 금지, 시크릿 매니저에서 주�
   - **Webex 동기화 흐름**: Link 헤더 cursor 페이지네이션, 최근 24h 윈도우 매 사이클 재조회로 수정 감지 부분 보완.
   - **수정/삭제 한계 명시**: Compliance Events API 또는 Webhook 도입은 v2.
   - 환경변수: `OPENSOMA_SIDECAR_URL` 추가, `WEBEX_BOT_TOKEN` → `OPERATOR_WEBEX_TOKEN`. sidecar 전용 `.env.example` 분리(운영자 ID/PW는 sidecar에만).
+- 2026-05-05: 3차 리비전 — 액션 실행 분리. (#8)
+  - **`POST /api/v1/actions/execute` 엔드포인트 신설** (§6.4). 멘토링 신청/취소는 채팅과 분리해 명시적 액션 디스패처로 처리. 카드 UI 직접 클릭과 채팅 follow-up 두 UX를 동일 경로로 통합.
+  - **`ActionProposal` 구조 변경**: `type: string` → `actionType: ActionType` (enum: `MENTORING_APPLY` / `MENTORING_CANCEL`). 채팅 응답에서는 *제안만* 반환, 실제 실행은 프론트가 `/actions/execute`로 위임.
+  - **§4.4 액션 실행 정책 재작성**: `needs_confirmation` 2턴 채팅 플로우 폐기. 확인 모달은 프론트 단에서 처리(`requiresConfirmation: true`).
+  - **`GET /api/v1/auth/status`** 추가 (§6.5): 페이지 새로고침 후 세션 + 외부 연동 상태 확인.
+  - **`GET /api/v1/system/sync-info`** 추가 (§6.6): `sync_state` 직렬화, 동기화 시각 표시용.
+  - **신규 에러 코드**: `ACTION_CONFLICT` (409), `INVALID_ACTION_TYPE` (422).
+  - 이유: 카드 UI에서 "신청" 버튼을 직접 누르는 UX에 LLM이 불필요하고, 명시적 액션은 idempotent하게 처리 가능. 프론트 측 제안(API 문서 참조) 반영.

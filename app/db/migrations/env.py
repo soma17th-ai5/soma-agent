@@ -1,10 +1,16 @@
-"""Alembic 마이그레이션 환경. 모델은 후속 이슈(#9~)에서 추가."""
+"""Alembic 마이그레이션 환경.
+
+도메인 모델 모듈을 import 해 `Base.metadata` 에 모든 ORM 클래스를 등록한 뒤
+Alembic 의 `target_metadata` 로 전달한다. 새 도메인을 추가할 때
+`app/domain/models/__init__.py` 에서 import 하면 이 파일은 수정 불필요.
+"""
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.config import get_settings
+from app.domain.models import Base  # 모든 ORM 등록
 
 config = context.config
 
@@ -13,7 +19,7 @@ if config.config_file_name is not None:
 
 config.set_main_option("sqlalchemy.url", get_settings().mysql_url)
 
-target_metadata = None
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
