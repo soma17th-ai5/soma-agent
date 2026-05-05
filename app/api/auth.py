@@ -64,11 +64,12 @@ def login(body: LoginRequest, db: DbSession, client: SomaClient) -> LoginRespons
     try:
         result = auth_service.login(db, client, body.username, body.password)
     except OpenSomaClientError as err:
+        # 짧은 username에서도 절반 이상 노출 안 되게 최대 3자만 + 마스크.
         log.warning(
             "auth.login_failed",
             code=err.code,
             status=err.status,
-            user_hint=body.username[:3] + "***",
+            user_hint=body.username[: min(3, len(body.username) // 2)] + "***",
         )
         raise _map_sidecar_error(err) from err
     log.info("auth.login_ok", user_no_prefix=result.user_no[:8])

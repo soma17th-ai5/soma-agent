@@ -61,23 +61,30 @@ def _safe_json(resp: httpx.Response) -> dict[str, Any]:
 
 
 class OpenSomaClient:
-    """sync httpx 클라이언트. FastAPI 동기 라우트와 동일 컨텍스트에서 사용.
+    """sync httpx 클라이언트. 단일 httpx.Client 인스턴스를 재사용해
+    connection pool 효율을 살린다. FastAPI 의존성 주입에서 요청별로 생성되지만
+    인스턴스 안에서는 다중 호출(예: apply 후 history)이 같은 풀을 공유.
 
     base_url 미지정 시 settings.opensoma_sidecar_url 사용.
     """
 
     def __init__(self, base_url: str | None = None, timeout_s: float = 10.0) -> None:
         self._base_url = (base_url or get_settings().opensoma_sidecar_url).rstrip("/")
-        self._timeout = timeout_s
+        self._http = httpx.Client(base_url=self._base_url, timeout=timeout_s)
 
-    def _client(self) -> httpx.Client:
-        return httpx.Client(base_url=self._base_url, timeout=self._timeout)
+    def close(self) -> None:
+        self._http.close()
+
+    def __enter__(self) -> OpenSomaClient:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
 
     # --- 세션 -----------------------------------------------------------
 
     def login(self, username: str, password: str) -> LoginResult:
-        with self._client() as c:
-            resp = c.post("/sessions", json={"username": username, "password": password})
+        resp = self._http.post("/sessions", json={"username": username, "password": password})
         _raise_for_error(resp)
         data = resp.json()
         return LoginResult(
@@ -89,15 +96,13 @@ class OpenSomaClient:
         )
 
     def logout(self, session_id: str) -> None:
-        with self._client() as c:
-            resp = c.delete(f"/sessions/{session_id}")
+        resp = self._http.delete(f"/sessions/{session_id}")
         # 204 / 404 모두 OK (멱등성)
         if resp.status_code not in (204, 404):
             _raise_for_error(resp)
 
     def whoami(self, session_id: str) -> WhoamiResult:
-        with self._client() as c:
-            resp = c.get("/whoami", headers={"X-Soma-Session": session_id})
+        resp = self._http.get("/whoami", headers={"X-Soma-Session": session_id})
         _raise_for_error(resp)
         data = resp.json()
         return WhoamiResult(

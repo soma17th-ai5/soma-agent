@@ -10,11 +10,9 @@ from app.adapters.opensoma_client import OpenSomaClient, OpenSomaClientError
 def make_client(handler) -> OpenSomaClient:  # type: ignore[no-untyped-def]
     transport = httpx.MockTransport(handler)
     client = OpenSomaClient(base_url="http://test")
-
-    def _client_factory() -> httpx.Client:
-        return httpx.Client(transport=transport, base_url="http://test")
-
-    client._client = _client_factory  # type: ignore[method-assign]
+    # 실 httpx.Client 대신 MockTransport 기반 client로 교체
+    client._http.close()
+    client._http = httpx.Client(transport=transport, base_url="http://test")
     return client
 
 
