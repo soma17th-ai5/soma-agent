@@ -18,6 +18,7 @@ from app.domain.models.mentoring import Mentoring, MentoringApplicant  # noqa: E
 from app.domain.models.notice import Notice  # noqa: E402
 from app.domain.models.sync_state import SyncState  # noqa: E402
 from app.domain.models.user import User  # noqa: E402
+from app.domain.models.webex import WebexMessage, WebexRoom  # noqa: E402
 
 __all__ = [
     "Application",
@@ -27,4 +28,6 @@ __all__ = [
     "Notice",
     "SyncState",
     "User",
+    "WebexMessage",
+    "WebexRoom",
 ]
