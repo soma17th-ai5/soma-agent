@@ -1,27 +1,35 @@
 name: CI
 on: [push, pull_request]
 jobs:
-  python:
-    if: hashFiles('pyproject.toml') != ''
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Skip if no Python project
+        id: check
+        run: |
+          if [ -f pyproject.toml ]; then
+            echo "found=true" >> $GITHUB_OUTPUT
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+            echo "no pyproject.toml — skipping Python job"
+          fi
       - uses: actions/setup-python@v5
+        if: steps.check.outputs.found == 'true'
         with:
           python-version: "3.11"
       - name: Install uv
+        if: steps.check.outputs.found == 'true'
         run: pip install uv
       - name: Install dependencies
+        if: steps.check.outputs.found == 'true'
         run: uv sync --frozen
       - name: Lint
+        if: steps.check.outputs.found == 'true'
         run: uv run ruff check app tests
       - name: Format check
+        if: steps.check.outputs.found == 'true'
         run: uv run ruff format --check app tests
       - name: Tests
+        if: steps.check.outputs.found == 'true'
         run: uv run pytest --tb=short -v
-
-  noop:
-    if: hashFiles('pyproject.toml') == ''
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "no Python in this ref — skipping"
