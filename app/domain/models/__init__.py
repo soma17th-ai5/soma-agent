@@ -13,6 +13,7 @@ class Base(DeclarativeBase):
 
 
 # 도메인 모듈 등록 (메타데이터 수집을 위해 import 필요).
+from app.domain.models.notice_attachment import NoticeAttachment  # noqa: E402
 from app.domain.models.user import User  # noqa: E402
 
-__all__ = ["Base", "User"]
+__all__ = ["Base", "NoticeAttachment", "User"]
