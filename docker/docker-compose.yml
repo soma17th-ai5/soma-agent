@@ -1,0 +1,57 @@
+# SomaAgent 로컬/개발 환경 컴포지션.
+# 운영 배포는 별도. opensoma-sidecar 컨테이너는 #8에서 추가됨.
+services:
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpw}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-soma_agent}
+      MYSQL_USER: ${MYSQL_USER:-soma}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-somapw}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpw}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    depends_on:
+      mysql:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-soma}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-somapw}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-soma_agent}
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      APP_ENV: ${APP_ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SOLAR_API_KEY: ${SOLAR_API_KEY:-}
+      OPENSOMA_SIDECAR_URL: ${OPENSOMA_SIDECAR_URL:-http://opensoma-sidecar:3000}
+      OPERATOR_WEBEX_TOKEN: ${OPERATOR_WEBEX_TOKEN:-}
+      WEBEX_SENDER_SALT: ${WEBEX_SENDER_SALT:-}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+
+volumes:
+  mysql_data:
+  qdrant_data:
