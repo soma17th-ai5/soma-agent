@@ -1,18 +1,21 @@
 name: CI
 on: [push, pull_request]
+
+# Note: job-level `if: hashFiles(...)`는 ref에 매칭 파일이 없으면
+# 워크플로우 자체가 0초 실패하는 케이스가 관측됨. 모든 가드는 step-level로.
 jobs:
-  test:
+  python:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Skip if no Python project
+      - name: Detect Python project
         id: check
         run: |
           if [ -f pyproject.toml ]; then
             echo "found=true" >> $GITHUB_OUTPUT
           else
             echo "found=false" >> $GITHUB_OUTPUT
-            echo "no pyproject.toml — skipping Python job"
+            echo "no pyproject.toml — skipping"
           fi
       - uses: actions/setup-python@v5
         if: steps.check.outputs.found == 'true'
@@ -33,3 +36,32 @@ jobs:
       - name: Tests
         if: steps.check.outputs.found == 'true'
         run: uv run pytest --tb=short -v
+
+  sidecar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect sidecar project
+        id: check
+        run: |
+          if [ -f opensoma-sidecar/package.json ]; then
+            echo "found=true" >> $GITHUB_OUTPUT
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+            echo "no opensoma-sidecar — skipping"
+          fi
+      - uses: oven-sh/setup-bun@v2
+        if: steps.check.outputs.found == 'true'
+      - name: Install dependencies
+        if: steps.check.outputs.found == 'true'
+        working-directory: opensoma-sidecar
+        # better-sqlite3 native build 회피 (toz 모듈 미사용)
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Type check
+        if: steps.check.outputs.found == 'true'
+        working-directory: opensoma-sidecar
+        run: bun run typecheck
+      - name: Tests
+        if: steps.check.outputs.found == 'true'
+        working-directory: opensoma-sidecar
+        run: bun test
