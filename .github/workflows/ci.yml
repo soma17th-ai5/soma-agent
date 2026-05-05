@@ -1,7 +1,20 @@
 name: CI
 on: [push, pull_request]
 jobs:
-  ok:
+  python:
     runs-on: ubuntu-latest
     steps:
-      - run: echo OK
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        run: pip install uv
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Lint
+        run: uv run ruff check app tests
+      - name: Format check
+        run: uv run ruff format --check app tests
+      - name: Tests
+        run: uv run pytest --tb=short -v
