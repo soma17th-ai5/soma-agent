@@ -4,6 +4,9 @@
 # Claude Code local settings
 .claude/settings.local.json
 
+# Claude Code sub-agent worktrees (local-only, isolated copies of repo)
+.claude/worktrees/
+
 # OS
 .DS_Store
 Thumbs.db

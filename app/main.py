@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api import health
+from app.api import auth, health
 from app.config import get_settings
 from app.observability.logging import configure_logging, get_logger
 from app.observability.tracing import TraceIdMiddleware
@@ -23,6 +23,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="SomaAgent", version="0.1.0", lifespan=lifespan)
     app.add_middleware(TraceIdMiddleware)
     app.include_router(health.router)
+    app.include_router(auth.router)
     return app
 
 
