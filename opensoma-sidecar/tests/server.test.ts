@@ -1,9 +1,24 @@
 import { describe, expect, it } from 'bun:test'
+import type { SomaClient } from 'opensoma'
 
 import { SidecarError, toSidecarError } from '../src/error_mapping'
 import { createApp } from '../src/server'
+import { sessionStore } from '../src/session_store'
 
 const app = createApp()
+
+interface FakeMentoring {
+  apply?: (id: number) => Promise<void>
+  cancel?: (params: { applySn: number; qustnrSn: number }) => Promise<void>
+  history?: (
+    options?: { page?: number },
+  ) => Promise<{ items: Array<Record<string, unknown>>; pagination: Record<string, unknown> }>
+}
+
+function injectFakeClient(sessionId: string, mentoring: FakeMentoring): void {
+  const fake = { mentoring } as unknown as SomaClient
+  sessionStore.set(sessionId, fake, 'test-user')
+}
 
 async function jsonOf(res: Response): Promise<Record<string, unknown>> {
   return (await res.json()) as Record<string, unknown>
@@ -109,6 +124,151 @@ describe('not found', () => {
     expect(res.status).toBe(404)
     const body = await jsonOf(res)
     expect(body.code).toBe('NOT_FOUND')
+  })
+})
+
+describe('mentoring apply mapping (uses real qustnrSn from history url)', () => {
+  it('should_returnApplySnAndParsedQustnrSn_when_historyAdvances', async () => {
+    const sid = 'sid-apply-1'
+    const beforeItems = [{ id: 100, url: '/sw/...?qustnrSn=11000', title: 'old' }]
+    const afterItems = [
+      {
+        id: 999,
+        url: '/sw/mypage/mentoLec/view.do?qustnrSn=11258&menuNo=200046',
+        title: '[염승헌] TRIFLAM',
+        appliedAt: '2026-05-05 12:31',
+        applicationStatus: '접수완료',
+        approvalStatus: 'OK',
+      },
+      ...beforeItems,
+    ]
+    let historyCallCount = 0
+    injectFakeClient(sid, {
+      apply: async () => undefined,
+      history: async () => {
+        historyCallCount++
+        return {
+          items: historyCallCount === 1 ? beforeItems : afterItems,
+          pagination: { totalPages: 1 },
+        }
+      },
+    })
+
+    const res = await app.request('/mentoring/11001/apply', {
+      method: 'POST',
+      headers: { 'X-Soma-Session': sid },
+    })
+    expect(res.status).toBe(200)
+    const body = await jsonOf(res)
+    expect(body.apply_sn).toBe(999)
+    // 핵심: 입력 11001 이 아니라 url 에서 파싱한 11258
+    expect(body.qustnr_sn).toBe(11258)
+    expect(body.mentoring_id).toBe(11001)
+    expect(body.title).toBe('[염승헌] TRIFLAM')
+  })
+
+  it('should_return502_when_historyDoesNotAdvanceAfterApply', async () => {
+    const sid = 'sid-apply-2'
+    const sameItems = [{ id: 100, url: '/sw/...?qustnrSn=11000', title: 'unchanged' }]
+    injectFakeClient(sid, {
+      apply: async () => undefined,
+      history: async () => ({ items: sameItems, pagination: { totalPages: 1 } }),
+    })
+
+    const res = await app.request('/mentoring/11001/apply', {
+      method: 'POST',
+      headers: { 'X-Soma-Session': sid },
+    })
+    expect(res.status).toBe(502)
+    const body = await jsonOf(res)
+    expect(body.code).toBe('APPLY_SN_UNRESOLVED')
+  })
+
+  it('should_fallbackToInputId_when_urlMissingQustnrSn', async () => {
+    const sid = 'sid-apply-3'
+    const beforeItems = [{ id: 100, url: '/sw/...?qustnrSn=11000', title: 'prev' }]
+    const afterItems = [
+      {
+        id: 200,
+        url: '/sw/no-querystring',
+        title: 'new',
+        appliedAt: '2026-05-05',
+        applicationStatus: '접수완료',
+        approvalStatus: 'OK',
+      },
+      ...beforeItems,
+    ]
+    let calls = 0
+    injectFakeClient(sid, {
+      apply: async () => undefined,
+      history: async () => {
+        calls++
+        return {
+          items: calls === 1 ? beforeItems : afterItems,
+          pagination: { totalPages: 1 },
+        }
+      },
+    })
+
+    const res = await app.request('/mentoring/77/apply', {
+      method: 'POST',
+      headers: { 'X-Soma-Session': sid },
+    })
+    expect(res.status).toBe(200)
+    const body = await jsonOf(res)
+    expect(body.apply_sn).toBe(200)
+    expect(body.qustnr_sn).toBe(77) // url 파싱 실패 → 입력 fallback
+  })
+})
+
+describe('mentoring cancel handles "정상처리" success message', () => {
+  it('should_return204_when_sdkThrowsWithKoreanSuccessMessage', async () => {
+    const sid = 'sid-cancel-1'
+    injectFakeClient(sid, {
+      cancel: async () => {
+        // OpenSoma 가 200 OK + "정상처리하였습니다." 본문을 보내면 SDK 가 throw 하는 케이스
+        throw new Error('정상처리하였습니다.')
+      },
+    })
+
+    const res = await app.request('/mentoring/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Soma-Session': sid },
+      body: JSON.stringify({ apply_sn: 59, qustnr_sn: 11258 }),
+    })
+    expect(res.status).toBe(204)
+  })
+
+  it('should_return502_when_sdkThrowsWithRealError', async () => {
+    const sid = 'sid-cancel-2'
+    injectFakeClient(sid, {
+      cancel: async () => {
+        throw new Error('network broken')
+      },
+    })
+
+    const res = await app.request('/mentoring/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Soma-Session': sid },
+      body: JSON.stringify({ apply_sn: 59, qustnr_sn: 11258 }),
+    })
+    expect(res.status).toBe(502)
+    const body = await jsonOf(res)
+    expect(body.code).toBe('UPSTREAM_ERROR')
+  })
+
+  it('should_return204_when_sdkResolvesNormally', async () => {
+    const sid = 'sid-cancel-3'
+    injectFakeClient(sid, {
+      cancel: async () => undefined,
+    })
+
+    const res = await app.request('/mentoring/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Soma-Session': sid },
+      body: JSON.stringify({ apply_sn: 59, qustnr_sn: 11258 }),
+    })
+    expect(res.status).toBe(204)
   })
 })
 

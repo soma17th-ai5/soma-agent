@@ -49,50 +49,66 @@ mentoringRouter.get('/:id', async (c) => {
   return c.json(detail)
 })
 
+function extractQustnrSn(url: string | undefined): number | null {
+  if (!url) return null
+  const m = url.match(/qustnrSn=(\d+)/)
+  return m ? Number.parseInt(m[1] ?? '', 10) || null : null
+}
+
 /**
- * 신청 후 history를 한 번 더 조회해 apply_sn을 매핑한다.
+ * 신청 후 history를 한 번 더 조회해 (apply_sn, qustnr_sn) 매핑을 해소한다.
  *
- * 이유: OpenSoma `apply()`는 `Promise<void>` 반환. apply_sn을 받지 못함.
- * 우리는 cancel 호출에 (apply_sn, qustnr_sn) 둘 다 필요해서 직후 history에서
- * 가장 최근 항목을 우리 신청으로 가정해 apply_sn을 추출한다.
+ * **OpenSoma 동작**: 입력 mentoring_id가 user 팀 컨텍스트에서 다른 questionnaire 로
+ * 자동 라우팅되는 경우가 있다 (예: id=11001 보냈는데 실제로는 본인 팀의 자유멘토링
+ * qustnrSn=11258 에 신청). 따라서 입력 id를 그대로 qustnr_sn으로 반환하면 cancel 호출
+ * 시 잘못된 ID 페어가 됨.
  *
- * 매칭 우선순위:
- *   1. url 쿼리에 ?qustnrSn=:id 가 있으면 그 항목 (가장 안전)
- *   2. 없으면 history page=1의 첫 항목 (단일 사용자 시점에선 신뢰 가능)
+ * **올바른 매핑**:
+ *   1. apply 직전 history 첫 항목 apply_sn(=`items[0].id`) 저장
+ *   2. apply 호출
+ *   3. history 재조회 — 첫 항목 id 가 변경됐으면 그게 새 신청
+ *      (변경 없으면 즉시 반영 안 된 케이스 — 짧게 대기 후 한 번 더 시도)
+ *   4. 새 항목의 url에서 `qustnrSn=N` 파싱 → 응답의 qustnr_sn (cancel 에 사용할 진짜 ID)
  */
 mentoringRouter.post('/:id/apply', async (c) => {
   const client = c.get('somaClient')
-  const id = Number(c.req.param('id'))
-  if (!Number.isInteger(id) || id < 1) {
+  const mentoringId = Number(c.req.param('id'))
+  if (!Number.isInteger(mentoringId) || mentoringId < 1) {
     throw new SidecarError(422, 'INVALID_REQUEST', 'mentoring id must be a positive integer')
   }
 
-  await client.mentoring.apply(id)
+  const before = await client.mentoring.history({ page: 1 })
+  const previousLatestApplySn = before.items[0]?.id ?? null
 
-  const history = await client.mentoring.history({ page: 1 })
-  const exactMatch = history.items.find((item) => item.url?.includes(`qustnrSn=${id}`))
-  const matched = exactMatch ?? history.items[0]
+  await client.mentoring.apply(mentoringId)
 
-  if (!matched) {
+  let matched = (await client.mentoring.history({ page: 1 })).items[0]
+  if (matched && matched.id === previousLatestApplySn) {
+    // history 가 즉시 반영되지 않았을 가능성. 한 번만 짧게 대기 후 재조회.
+    await new Promise((r) => setTimeout(r, 500))
+    matched = (await client.mentoring.history({ page: 1 })).items[0]
+  }
+
+  if (!matched || matched.id === previousLatestApplySn) {
     throw new SidecarError(
       502,
       'APPLY_SN_UNRESOLVED',
-      'application succeeded but apply_sn could not be resolved from history',
+      'application returned but history did not advance',
     )
   }
-  if (!exactMatch) {
-    // 휴리스틱 fallback — race나 history 정렬 변동 시 잘못된 항목을 선택할 수 있음.
-    // 운영자가 모니터링할 수 있도록 경고 로그 남김.
-    console.warn('[sidecar] apply_sn fallback used (no exact url match)', {
-      qustnr_sn: id,
-      candidate_apply_sn: matched.id,
-      candidate_title: matched.title,
+
+  const parsedQustnrSn = extractQustnrSn(matched.url)
+  if (parsedQustnrSn === null) {
+    console.warn('[sidecar] qustnrSn missing in history url; falling back to input id', {
+      url: matched.url,
+      input_mentoring_id: mentoringId,
     })
   }
 
   return c.json({
     apply_sn: matched.id,
-    qustnr_sn: id,
+    qustnr_sn: parsedQustnrSn ?? mentoringId,
+    mentoring_id: mentoringId,
     title: matched.title,
     applied_at: matched.appliedAt,
     application_status: matched.applicationStatus,
@@ -100,6 +116,12 @@ mentoringRouter.post('/:id/apply', async (c) => {
   })
 })
 
+/**
+ * OpenSoma `/mypage/userAnswer/cancel.do` 가 처리 성공 시 200 OK + 본문
+ * `정상처리하였습니다.` 한국어 안내 메시지를 돌려주는 케이스가 관측됨.
+ * SDK 가 이 본문을 (json 파싱 실패로 추정) Error 로 throw 하므로 sidecar 쪽에서
+ * 메시지 패턴이 success 시그널이면 204 로 통과시킨다.
+ */
 mentoringRouter.post('/cancel', async (c) => {
   const client = c.get('somaClient')
   let body: unknown
@@ -116,9 +138,16 @@ mentoringRouter.post('/cancel', async (c) => {
       'apply_sn and qustnr_sn (positive integers) are required',
     )
   }
-  await client.mentoring.cancel({
-    applySn: parsed.data.apply_sn,
-    qustnrSn: parsed.data.qustnr_sn,
-  })
+  try {
+    await client.mentoring.cancel({
+      applySn: parsed.data.apply_sn,
+      qustnrSn: parsed.data.qustnr_sn,
+    })
+  } catch (err) {
+    if (err instanceof Error && /정상처리/.test(err.message)) {
+      return c.body(null, 204)
+    }
+    throw err
+  }
   return c.body(null, 204)
 })
