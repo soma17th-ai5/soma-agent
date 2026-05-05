@@ -16,6 +16,7 @@ class Base(DeclarativeBase):
 from app.domain.models.application import Application  # noqa: E402
 from app.domain.models.mentoring import Mentoring, MentoringApplicant  # noqa: E402
 from app.domain.models.notice import Notice  # noqa: E402
+from app.domain.models.notice_attachment import NoticeAttachment  # noqa: E402
 from app.domain.models.sync_state import SyncState  # noqa: E402
 from app.domain.models.user import User  # noqa: E402
 from app.domain.models.webex import WebexMessage, WebexRoom  # noqa: E402
@@ -26,6 +27,7 @@ __all__ = [
     "Mentoring",
     "MentoringApplicant",
     "Notice",
+    "NoticeAttachment",
     "SyncState",
     "User",
     "WebexMessage",
