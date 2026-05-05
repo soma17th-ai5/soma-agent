@@ -28,7 +28,9 @@ class Settings(BaseSettings):
 
     solar_api_key: str = ""
     solar_llm_model: str = "solar-pro"
-    solar_embedding_model: str = "solar-embedding-1-large"
+    # Upstage embedding은 passage(저장용)와 query(검색용)가 분리됨. 둘 다 4096차원.
+    solar_embedding_passage_model: str = "embedding-passage"
+    solar_embedding_query_model: str = "embedding-query"
 
     opensoma_sidecar_url: str = "http://opensoma-sidecar:3000"
 
