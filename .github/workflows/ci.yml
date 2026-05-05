@@ -20,27 +20,8 @@ jobs:
       - name: Tests
         run: uv run pytest --tb=short -v
 
-  sidecar:
-    if: hashFiles('opensoma-sidecar/package.json') != ''
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: opensoma-sidecar
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - name: Install dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
-      - name: Type check
-        run: bun run typecheck
-      - name: Tests
-        run: bun test
-
-  # 적어도 하나의 job은 항상 실행돼서 PR 체크 표시. pyproject도 sidecar도
-  # 없는 base 브랜치(현재 main 등)에서 다른 두 job이 모두 skip 되어도
-  # 빈 status를 만들지 않게 하는 가드.
   noop:
-    if: hashFiles('pyproject.toml') == '' && hashFiles('opensoma-sidecar/package.json') == ''
+    if: hashFiles('pyproject.toml') == ''
     runs-on: ubuntu-latest
     steps:
-      - run: echo "no Python or sidecar in this ref — skipping"
+      - run: echo "no Python in this ref — skipping"
