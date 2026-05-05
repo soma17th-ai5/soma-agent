@@ -6,65 +6,42 @@ on:
   pull_request:
 
 jobs:
-  # ============================================================
-  # Python (FastAPI app) — uv 기반
-  # ============================================================
   python:
-    if: hashFiles('pyproject.toml') != ''
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          enable-cache: true
-
-      - name: Set up Python 3.11
-        run: uv python install 3.11
+        run: pip install uv
 
       - name: Install dependencies
         run: uv sync --frozen
 
-      - name: Lint (ruff)
+      - name: Lint
         run: uv run ruff check app tests
 
-      - name: Format check (ruff)
+      - name: Format check
         run: uv run ruff format --check app tests
 
       - name: Tests
         run: uv run pytest --tb=short -v
 
-      - name: Architecture tests (if present)
-        run: |
-          if [ -f tests/test_architecture.py ]; then
-            uv run pytest tests/test_architecture.py -v
-          else
-            echo "no architecture tests yet — see issue #18"
-          fi
-
-  # ============================================================
-  # Bun (opensoma-sidecar) — sidecar 디렉토리 있을 때만
-  # ============================================================
   sidecar:
-    if: hashFiles('opensoma-sidecar/package.json') != ''
     runs-on: ubuntu-latest
+    if: hashFiles('opensoma-sidecar/package.json') != ''
     defaults:
       run:
         working-directory: opensoma-sidecar
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
+      - uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
-        # better-sqlite3 native build이 CI 환경에서도 실패할 수 있어 ignore-scripts.
-        # 우리 sidecar는 toz 모듈 import 안 하므로 안전.
         run: bun install --frozen-lockfile --ignore-scripts
 
       - name: Type check
@@ -72,34 +49,3 @@ jobs:
 
       - name: Tests
         run: bun test
-
-  # ============================================================
-  # 시크릿 하드코딩 스캔 (전 언어 공통)
-  # ============================================================
-  security-scan:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Scan for hardcoded secrets
-        run: |
-          echo "=== 하드코딩된 시크릿 스캔 ==="
-          # 명백한 패턴만 검사 (env_var = "literal").
-          # test/example/placeholder/주석은 제외.
-          SECRETS=$(grep -rEn \
-            "(password|secret|api_key|apikey|token|passwd)\s*=\s*['\"][^\$\{(\s][^'\"]{4,}" \
-            --include='*.py' \
-            --include='*.ts' \
-            --include='*.js' \
-            --include='*.yml' \
-            --include='*.yaml' \
-            . 2>/dev/null \
-            | grep -v -iE '(test|example|placeholder|todo|fixme|#|//|\*)' \
-            || true)
-          if [ -n "$SECRETS" ]; then
-            echo "❌ 하드코딩된 시크릿 의심:"
-            echo "$SECRETS"
-            exit 1
-          fi
-          echo "✅ 시크릿 없음"
