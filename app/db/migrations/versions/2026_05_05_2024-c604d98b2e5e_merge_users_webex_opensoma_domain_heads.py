@@ -6,10 +6,6 @@ Create Date: 2026-05-05 20:24:49.387364+09:00
 """
 from collections.abc import Sequence
 
-from alembic import op
-import sqlalchemy as sa
-
-
 revision: str = 'c604d98b2e5e'
 down_revision: str | None = ('001_webex', '002_opensoma_domain')
 branch_labels: str | Sequence[str] | None = None
