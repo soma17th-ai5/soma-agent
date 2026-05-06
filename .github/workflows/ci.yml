@@ -32,6 +32,8 @@ jobs:
         run: uv run ruff check app tests
       - name: Format check
         if: steps.check.outputs.found == 'true'
+        # TODO(#32): in-flight PR 정리 후 일괄 ruff format → 이 옵션 제거
+        continue-on-error: true
         run: uv run ruff format --check app tests
       - name: Tests
         if: steps.check.outputs.found == 'true'
