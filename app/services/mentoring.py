@@ -258,3 +258,107 @@ def _searchable_text(item: dict[str, Any], detail: dict[str, Any]) -> str:
         _strip_html(detail.get("content")),
     ]
     return "\n".join(p for p in parts if p)
+
+
+# =====================================================================
+# 액션: apply / cancel  (SPEC §4.4 needs_confirmation)
+# =====================================================================
+
+from app.domain.contracts.action import ActionProposal, ActionResult  # noqa: E402
+from app.services import application as application_service  # noqa: E402
+
+
+class MentoringNotApplicableError(Exception):
+    """현재 멘토링 상태로는 신청 불가."""
+
+    def __init__(self, mentoring_id: int, status: str | None) -> None:
+        super().__init__(f"mentoring {mentoring_id} status={status!r} is not open for apply")
+        self.mentoring_id = mentoring_id
+        self.status = status
+
+
+_OPEN_STATUSES = {"접수중", "open", "OPEN"}
+
+
+def apply(
+    db: Session,
+    opensoma: OpenSomaClient,
+    session_id: str,
+    soma_user_id: str,
+    mentoring_id: int,
+    *,
+    confirmed: bool = False,
+) -> ActionProposal | ActionResult:
+    """1차(confirmed=False): 직전 detail 재검증 + ActionProposal 반환 (실행 X).
+    2차(confirmed=True):     sidecar apply 호출 → applications 캐시 무효화 → ActionResult.
+
+    raises MentoringNotApplicableError: 현재 status 가 접수중이 아닐 때
+    """
+    detail = opensoma.mentoring_get(session_id, mentoring_id)
+    status = detail.get("status")
+    if status not in _OPEN_STATUSES:
+        raise MentoringNotApplicableError(mentoring_id, status)
+
+    if not confirmed:
+        return ActionProposal(
+            type="opensoma.mentoring.apply",
+            label=f"멘토링 신청: {detail.get('title', '?')}",
+            payload={
+                "mentoring_id": mentoring_id,
+                "title": detail.get("title"),
+                "session_date": detail.get("sessionDate"),
+                "session_time": detail.get("sessionTime"),
+                "venue": detail.get("venue"),
+                "current_status": status,
+                "attendees": detail.get("attendees"),
+            },
+        )
+
+    result = opensoma.mentoring_apply(session_id, mentoring_id)
+    application_service.invalidate(db, soma_user_id)
+    return ActionResult(
+        type="opensoma.mentoring.apply",
+        status="success",
+        message=f"신청 완료: {result.get('title', detail.get('title', '?'))}",
+        payload={
+            "apply_sn": result.get("apply_sn"),
+            "qustnr_sn": result.get("qustnr_sn"),
+            "mentoring_id": result.get("mentoring_id", mentoring_id),
+            "applied_at": result.get("applied_at"),
+            "application_status": result.get("application_status"),
+            "approval_status": result.get("approval_status"),
+        },
+    )
+
+
+def cancel(
+    db: Session,
+    opensoma: OpenSomaClient,
+    session_id: str,
+    soma_user_id: str,
+    apply_sn: int,
+    qustnr_sn: int,
+    *,
+    confirmed: bool = False,
+) -> ActionProposal | ActionResult:
+    """1차(confirmed=False): ActionProposal 반환.
+    2차(confirmed=True):     sidecar cancel → applications 캐시 무효화.
+    """
+    if not confirmed:
+        return ActionProposal(
+            type="opensoma.mentoring.cancel",
+            label=f"멘토링 신청 취소 (apply_sn={apply_sn})",
+            payload={
+                "apply_sn": apply_sn,
+                "qustnr_sn": qustnr_sn,
+            },
+        )
+
+    opensoma.mentoring_cancel(session_id, apply_sn=apply_sn, qustnr_sn=qustnr_sn)
+    application_service.invalidate(db, soma_user_id)
+    return ActionResult(
+        type="opensoma.mentoring.cancel",
+        status="success",
+        message="신청 취소 완료",
+        payload={"apply_sn": apply_sn, "qustnr_sn": qustnr_sn},
+    )
