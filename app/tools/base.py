@@ -7,9 +7,17 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from app.domain.contracts.tool_result import DomainType, ToolResult
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from app.adapters.calendar_mock import CalendarMock
+    from app.adapters.opensoma_client import OpenSomaClient
+    from app.adapters.qdrant_client import QdrantAdapter
+    from app.adapters.solar_client import SolarClient
 
 
 @dataclass
@@ -20,11 +28,19 @@ class ToolContext:
     - soma_session: OpenSoma 세션 토큰. `requires_auth=True` tool은 이 값이 없으면
       실행 전에 router/executor에서 차단해야 한다.
     - soma_user_id: 인증된 사용자 식별자. application/mentoring tool에서 캐시 키로 사용.
+
+    아래 리소스 필드는 agent 그래프가 매 요청마다 주입한다. tool은 자기가 필요한
+    리소스만 읽고, 누락되어 있으면 `ToolResult{status:"failed"}`로 응답해야 한다.
     """
 
     session_id: str | None = None
     soma_session: str | None = None
     soma_user_id: str | None = None
+    db: Session | None = None
+    opensoma: OpenSomaClient | None = None
+    qdrant: QdrantAdapter | None = None
+    solar: SolarClient | None = None
+    calendar: CalendarMock | None = None
 
 
 class Tool(ABC):
