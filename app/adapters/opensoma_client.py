@@ -111,3 +111,97 @@ class OpenSomaClient:
             user_name=data.get("user_name"),
             role=data.get("role") or "TRAINEE",
         )
+
+    # --- 공지 -----------------------------------------------------------
+
+    def notice_list(self, session_id: str, page: int = 1) -> dict[str, Any]:
+        """OpenSoma `NoticeListItem[]` + pagination을 그대로 통과시킴.
+
+        반환 형태: {"items": [{id, title, author, createdAt}, ...], "pagination": {...}}
+        """
+        resp = self._http.get(
+            "/notice",
+            params={"page": page},
+            headers={"X-Soma-Session": session_id},
+        )
+        _raise_for_error(resp)
+        return resp.json()
+
+    def notice_get(self, session_id: str, notice_id: int) -> dict[str, Any]:
+        """`NoticeDetail` 을 그대로 반환: {id, title, author, createdAt, content}.
+
+        첨부 파싱은 #13 services.notice_attachment 모듈 책임.
+        """
+        resp = self._http.get(
+            f"/notice/{notice_id}",
+            headers={"X-Soma-Session": session_id},
+        )
+        _raise_for_error(resp)
+        return resp.json()
+
+    # --- 멘토링 ---------------------------------------------------------
+
+    def mentoring_list(
+        self,
+        session_id: str,
+        *,
+        status: str | None = None,
+        type_: str | None = None,
+        search: str | None = None,
+        page: int = 1,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"page": page}
+        if status is not None:
+            params["status"] = status
+        if type_ is not None:
+            params["type"] = type_
+        if search is not None:
+            params["search"] = search
+        resp = self._http.get(
+            "/mentoring",
+            params=params,
+            headers={"X-Soma-Session": session_id},
+        )
+        _raise_for_error(resp)
+        return resp.json()
+
+    def mentoring_get(self, session_id: str, mentoring_id: int) -> dict[str, Any]:
+        resp = self._http.get(
+            f"/mentoring/{mentoring_id}",
+            headers={"X-Soma-Session": session_id},
+        )
+        _raise_for_error(resp)
+        return resp.json()
+
+    def mentoring_apply(self, session_id: str, mentoring_id: int) -> dict[str, Any]:
+        """sidecar가 신청 직후 history 를 조회해 apply_sn / qustnr_sn 매핑을 자동 해소.
+
+        반환: {apply_sn, qustnr_sn, title, applied_at, application_status, approval_status}
+        """
+        resp = self._http.post(
+            f"/mentoring/{mentoring_id}/apply",
+            headers={"X-Soma-Session": session_id},
+        )
+        _raise_for_error(resp)
+        return resp.json()
+
+    def mentoring_cancel(self, session_id: str, apply_sn: int, qustnr_sn: int) -> None:
+        resp = self._http.post(
+            "/mentoring/cancel",
+            json={"apply_sn": apply_sn, "qustnr_sn": qustnr_sn},
+            headers={"X-Soma-Session": session_id},
+        )
+        if resp.status_code == 204:
+            return
+        _raise_for_error(resp)
+
+    # --- 접수 내역 ------------------------------------------------------
+
+    def application_history(self, session_id: str, page: int = 1) -> dict[str, Any]:
+        resp = self._http.get(
+            "/application/history",
+            params={"page": page},
+            headers={"X-Soma-Session": session_id},
+        )
+        _raise_for_error(resp)
+        return resp.json()
