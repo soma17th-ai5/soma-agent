@@ -1,0 +1,39 @@
+name: Claude PR Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  review:
+    # PR을 생성한 주체가 bot이거나 이미 리뷰가 진행된 경우 등 
+    # 무한 루프를 방지하기 위해 필터링이 필요할 수 있지만, 
+    # 기본적으로 PR 이벤트에 반응하도록 설정합니다.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # PR diff 분석을 위해 전체 히스토리 필요
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run Claude PR Review
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # gh CLI가 사용하는 환경변수
+        run: |
+          # /review 스킬을 실행하여 PR 번호에 대한 리뷰를 수행합니다.
+          # -p (prompt) 옵션을 사용하여 비대화형 모드로 명령을 전달합니다.
+          claude -p "/review ${{ github.event.pull_request.number }}"
