@@ -26,7 +26,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.domain.models import Base
+from app.domain.orm import Base
 
 # Webex 룸 타입은 group/direct 만 사용 (huddle 등 신규 타입은 v2).
 ROOM_TYPES = ("group", "direct")

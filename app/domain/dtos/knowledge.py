@@ -1,6 +1,6 @@
-"""Knowledge(통합 RAG) 도메인 컨트랙트.
+"""Knowledge(통합 RAG) 도메인 DTO.
 
-`knowledge.search` tool과 인덱서가 주고받는 내부 데이터 구조 정의.
+`knowledge.search` tool과 인덱서가 주고받는 내부 데이터 구조.
 SPEC §3.2 (Qdrant 컬렉션) / §4.2 (`knowledge.search` tool) 참고.
 
 이 모듈은 외부 라이브러리(qdrant-client, httpx)에 의존하지 않는다 — 어댑터/서비스
@@ -25,7 +25,7 @@ class KnowledgeSourceType(StrEnum):
     WEBEX_MESSAGE = "WEBEX_MESSAGE"
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class SearchHit:
     """`knowledge.search`의 단일 매치 결과.
 

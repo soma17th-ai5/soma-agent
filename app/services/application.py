@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -18,18 +17,12 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.adapters.opensoma_client import OpenSomaClient
-from app.domain.models.application import Application
+from app.domain.dtos.application import ApplicationItemDTO, HistoryDTO
+from app.domain.orm.application import Application
 
 log = logging.getLogger("app.services.application")
 
 CACHE_TTL = timedelta(minutes=5)
-
-
-@dataclass
-class HistoryResult:
-    items: list[Application]
-    cached_at: datetime
-    refreshed: bool
 
 
 def _extract_qustnr_sn(url: str | None) -> int | None:
@@ -55,16 +48,23 @@ def get_history(
     *,
     force_refresh: bool = False,
     max_pages: int = 10,
-) -> HistoryResult:
-    """사용자 접수 내역 — 캐시 우선, 만료/강제 시 sidecar 호출."""
+) -> HistoryDTO:
+    """사용자 접수 내역 — 캐시 우선, 만료/강제 시 sidecar 호출.
+
+    ORM 행을 직접 노출하지 않고 ApplicationItemDTO로 변환해 반환한다.
+    """
     rows = (
         db.execute(select(Application).where(Application.soma_user_id == soma_user_id))
         .scalars()
         .all()
     )
-    if not force_refresh and _is_fresh(rows):
+    if not force_refresh and _is_fresh(list(rows)):
         cached_at = max((r.cached_at for r in rows), default=datetime.utcnow())
-        return HistoryResult(items=list(rows), cached_at=cached_at, refreshed=False)
+        return HistoryDTO(
+            items=[_to_dto(r) for r in rows],
+            cached_at=cached_at,
+            refreshed=False,
+        )
 
     # cache miss → sidecar 호출 + 갱신
     db.execute(delete(Application).where(Application.soma_user_id == soma_user_id))
@@ -81,7 +81,26 @@ def get_history(
     db.commit()
     log.info("application.history.refreshed", user=soma_user_id, count=len(new_rows))
     cached_at = datetime.utcnow()
-    return HistoryResult(items=new_rows, cached_at=cached_at, refreshed=True)
+    return HistoryDTO(
+        items=[_to_dto(r) for r in new_rows],
+        cached_at=cached_at,
+        refreshed=True,
+    )
+
+
+def _to_dto(row: Application) -> ApplicationItemDTO:
+    return ApplicationItemDTO(
+        apply_sn=row.apply_sn,
+        qustnr_sn=row.qustnr_sn,
+        category=row.category,
+        title=row.title,
+        target_url=row.target_url,
+        author=row.author,
+        session_date_text=row.session_date_text,
+        applied_at_text=row.applied_at_text,
+        application_status=row.application_status,
+        approval_status=row.approval_status,
+    )
 
 
 def invalidate(db: Session, soma_user_id: str) -> int:

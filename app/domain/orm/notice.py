@@ -21,7 +21,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.domain.models import Base
+from app.domain.orm import Base
 
 
 class Notice(Base):

@@ -12,7 +12,7 @@ import pytest
 from qdrant_client import QdrantClient
 
 from app.adapters.qdrant_client import QdrantAdapter
-from app.domain.contracts.knowledge import KnowledgeSourceType
+from app.domain.dtos.knowledge import KnowledgeSourceType
 from app.services.rag_indexer import (
     _deterministic_chunk_id,
     chunk_text,

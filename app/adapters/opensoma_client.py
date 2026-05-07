@@ -8,12 +8,12 @@ notice/mentoring/application 메소드는 #10/#11/#13에서 점진적으로 추�
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
 from app.config import get_settings
+from app.domain.dtos.auth import LoginDTO, WhoamiDTO
 
 
 class OpenSomaClientError(Exception):
@@ -24,23 +24,6 @@ class OpenSomaClientError(Exception):
         self.status = status
         self.code = code
         self.message = message
-
-
-@dataclass(frozen=True)
-class LoginResult:
-    session_id: str
-    soma_user_id: str
-    user_no: str
-    user_name: str | None
-    role: str
-
-
-@dataclass(frozen=True)
-class WhoamiResult:
-    soma_user_id: str
-    user_no: str
-    user_name: str | None
-    role: str
 
 
 def _raise_for_error(resp: httpx.Response) -> None:
@@ -83,11 +66,11 @@ class OpenSomaClient:
 
     # --- 세션 -----------------------------------------------------------
 
-    def login(self, username: str, password: str) -> LoginResult:
+    def login(self, username: str, password: str) -> LoginDTO:
         resp = self._http.post("/sessions", json={"username": username, "password": password})
         _raise_for_error(resp)
         data = resp.json()
-        return LoginResult(
+        return LoginDTO(
             session_id=data["session_id"],
             soma_user_id=data["soma_user_id"],
             user_no=data["user_no"],
@@ -101,11 +84,11 @@ class OpenSomaClient:
         if resp.status_code not in (204, 404):
             _raise_for_error(resp)
 
-    def whoami(self, session_id: str) -> WhoamiResult:
+    def whoami(self, session_id: str) -> WhoamiDTO:
         resp = self._http.get("/whoami", headers={"X-Soma-Session": session_id})
         _raise_for_error(resp)
         data = resp.json()
-        return WhoamiResult(
+        return WhoamiDTO(
             soma_user_id=data["soma_user_id"],
             user_no=data["user_no"],
             user_name=data.get("user_name"),

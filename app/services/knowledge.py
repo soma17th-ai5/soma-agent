@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from app.domain.contracts.knowledge import KnowledgeSourceType, SearchHit
+from app.domain.dtos.knowledge import KnowledgeSourceType, SearchHit
 
 if TYPE_CHECKING:
     from app.adapters.qdrant_client import QdrantAdapter

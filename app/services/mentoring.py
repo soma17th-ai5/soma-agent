@@ -22,14 +22,14 @@ from app.adapters.opensoma_client import OpenSomaClient
 from app.adapters.qdrant_client import QdrantAdapter
 from app.adapters.solar_client import SolarClient
 from app.config import get_settings
-from app.domain.contracts.knowledge import KnowledgeSourceType
-from app.domain.models.mentoring import Mentoring, MentoringApplicant
+from app.domain.dtos.knowledge import KnowledgeSourceType
+from app.domain.orm.mentoring import Mentoring, MentoringApplicant
 from app.services.rag_indexer import index_chunks
 
 log = logging.getLogger("app.services.mentoring")
 
 
-@dataclass
+@dataclass(slots=True)
 class MentoringSyncStats:
     fetched: int = 0
     inserted: int = 0
@@ -264,7 +264,7 @@ def _searchable_text(item: dict[str, Any], detail: dict[str, Any]) -> str:
 # 액션: apply / cancel  (SPEC §4.4 needs_confirmation)
 # =====================================================================
 
-from app.domain.contracts.action import ActionProposal, ActionResult  # noqa: E402
+from app.domain.dtos.action import ActionProposal, ActionResult  # noqa: E402
 from app.errors.exceptions import MentoringNotOpen  # noqa: E402
 from app.services import application as application_service  # noqa: E402
 

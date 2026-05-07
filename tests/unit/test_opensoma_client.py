@@ -16,7 +16,7 @@ def make_client(handler) -> OpenSomaClient:  # type: ignore[no-untyped-def]
     return client
 
 
-def test_should_returnLoginResult_when_loginSucceeds() -> None:
+def test_should_returnLoginDTO_when_loginSucceeds() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "POST"
         assert request.url.path == "/sessions"
@@ -63,7 +63,7 @@ def test_should_raiseUpstreamError_when_sidecarReturns502() -> None:
     assert exc.value.code == "UPSTREAM_ERROR"
 
 
-def test_should_returnWhoamiResult_when_sessionValid() -> None:
+def test_should_returnWhoamiDTO_when_sessionValid() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers.get("X-Soma-Session") == "sid"
         return httpx.Response(

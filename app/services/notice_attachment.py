@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING
 
 from bs4 import BeautifulSoup
 
-from app.domain.contracts.knowledge import KnowledgeSourceType
+from app.domain.dtos.knowledge import KnowledgeSourceType
 from app.services.rag_indexer import chunk_text, index_chunks
 
 if TYPE_CHECKING:
@@ -49,7 +49,7 @@ SUPPORTED_EXTENSIONS = (".pdf", ".hwp", ".hwpx", ".docx", ".doc", ".xlsx", ".xls
 DOWNLOAD_URL_MARKERS = ("download.do", "fileDownload", "/download/", "filedownload.do")
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class AttachmentRef:
     """공지 본문에서 추출된 첨부 anchor.
 
@@ -61,7 +61,7 @@ class AttachmentRef:
     file_type: str | None
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class ProcessedAttachment:
     """첨부 1건 처리 결과. notice_attachments 행 + 인덱싱 메타.
 

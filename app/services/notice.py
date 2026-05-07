@@ -21,14 +21,14 @@ from sqlalchemy.orm import Session
 from app.adapters.opensoma_client import OpenSomaClient
 from app.adapters.qdrant_client import QdrantAdapter
 from app.adapters.solar_client import SolarClient
-from app.domain.contracts.knowledge import KnowledgeSourceType
-from app.domain.models.notice import Notice
+from app.domain.dtos.knowledge import KnowledgeSourceType
+from app.domain.orm.notice import Notice
 from app.services.rag_indexer import index_chunks
 
 log = logging.getLogger("app.services.notice")
 
 
-@dataclass
+@dataclass(slots=True)
 class NoticeSyncStats:
     fetched: int = 0
     inserted: int = 0
