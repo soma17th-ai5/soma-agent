@@ -3,14 +3,15 @@
 - POST /auth/login: ID/PW를 sidecar로 위임. session_id + 사용자 정보 반환.
 - DELETE /auth/session: 현재 세션 폐기 (sidecar에 위임).
 - GET /auth/whoami: 현재 세션 사용자 정보.
+
+도메인/업스트림 예외는 raise만 하면 app-level 핸들러가 표준 응답으로 변환한다.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Response, status
 from pydantic import BaseModel, Field
 
-from app.adapters.opensoma_client import OpenSomaClientError
-from app.api.deps import DbSession, SessionId, SomaClient, session_expired_exc
+from app.api.deps import DbSession, SessionId, SomaClient
 from app.observability.logging import get_logger
 from app.services import auth as auth_service
 
@@ -38,40 +39,9 @@ class WhoamiResponse(BaseModel):
     role: str
 
 
-def _map_sidecar_error(err: OpenSomaClientError) -> HTTPException:
-    # sidecar의 401은 사용자에게 그대로 전파.
-    if err.status == 401:
-        if err.code == "SESSION_EXPIRED":
-            return session_expired_exc()
-        return HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": err.code, "message": err.message},
-        )
-    if err.status == 422:
-        return HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"code": err.code, "message": err.message},
-        )
-    # 외 사이드카/홈페이지 장애는 503으로 추상화 (내부 에러 문구 노출 안 함).
-    return HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail={"code": "UPSTREAM_UNAVAILABLE", "message": "OpenSoma is temporarily unavailable"},
-    )
-
-
 @router.post("/login", response_model=LoginResponse)
 def login(body: LoginRequest, db: DbSession, client: SomaClient) -> LoginResponse:
-    try:
-        result = auth_service.login(db, client, body.username, body.password)
-    except OpenSomaClientError as err:
-        # 짧은 username에서도 절반 이상 노출 안 되게 최대 3자만 + 마스크.
-        log.warning(
-            "auth.login_failed",
-            code=err.code,
-            status=err.status,
-            user_hint=body.username[: min(3, len(body.username) // 2)] + "***",
-        )
-        raise _map_sidecar_error(err) from err
+    result = auth_service.login(db, client, body.username, body.password)
     log.info("auth.login_ok", user_no_prefix=result.user_no[:8])
     return LoginResponse(
         session_id=result.session_id,
@@ -84,24 +54,15 @@ def login(body: LoginRequest, db: DbSession, client: SomaClient) -> LoginRespons
 
 @router.delete("/session", status_code=status.HTTP_204_NO_CONTENT)
 def logout(session_id: SessionId, client: SomaClient) -> Response:
-    try:
-        client.logout(session_id)
-    except OpenSomaClientError as err:
-        # 로그아웃 실패는 부드럽게 — 어차피 클라이언트가 핸들 폐기하면 끝.
-        log.info("auth.logout_upstream_error", code=err.code, status=err.status)
+    auth_service.logout(client, session_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/whoami", response_model=WhoamiResponse)
 def whoami(session_id: SessionId, db: DbSession, client: SomaClient) -> WhoamiResponse:
-    try:
-        result = client.whoami(session_id)
-    except OpenSomaClientError as err:
-        raise _map_sidecar_error(err) from err
-
+    result = client.whoami(session_id)
     # whoami가 호출될 때마다 user_no 기준으로 갱신 (이름·role 변경 흡수).
     auth_service.upsert_user_from_whoami(db, result)
-
     return WhoamiResponse(
         soma_user_id=result.soma_user_id,
         user_no=result.user_no,

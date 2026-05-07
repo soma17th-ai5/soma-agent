@@ -108,7 +108,7 @@ def test_should_return401_when_credentialsInvalid(
     client, _ = client_and_state
     res = client.post("/auth/login", json={"username": "bad", "password": "pw"})
     assert res.status_code == 401
-    assert res.json()["detail"]["code"] == "INVALID_CREDENTIALS"
+    assert res.json()["code"] == "INVALID_CREDENTIALS"
 
 
 def test_should_return422_when_loginBodyEmpty(
@@ -125,7 +125,7 @@ def test_should_return401_when_sessionHeaderMissing(
     client, _ = client_and_state
     res = client.get("/auth/whoami")
     assert res.status_code == 401
-    assert res.json()["detail"]["code"] == "SOMA_AUTH_REQUIRED"
+    assert res.json()["code"] == "SOMA_AUTH_REQUIRED"
 
 
 def test_should_returnSessionExpiredHeader_when_sidecarReports401Expired(
@@ -134,7 +134,7 @@ def test_should_returnSessionExpiredHeader_when_sidecarReports401Expired(
     client, _ = client_and_state
     res = client.get("/auth/whoami", headers={"X-Soma-Session": "expired"})
     assert res.status_code == 401
-    assert res.json()["detail"]["code"] == "SESSION_EXPIRED"
+    assert res.json()["code"] == "SESSION_EXPIRED"
     assert res.headers.get("x-soma-session-expired") == "true"
 
 
