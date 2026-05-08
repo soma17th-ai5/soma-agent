@@ -9,10 +9,14 @@ from collections.abc import Iterator
 from datetime import datetime, timedelta
 from typing import Any
 
+from unittest.mock import MagicMock
+
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.adapters.qdrant_client import QdrantAdapter
+from app.adapters.solar_client import SolarClient
 from app.config import get_settings
 from app.domain.models import Base
 from app.domain.models.webex import WebexMessage, WebexRoom
@@ -351,3 +355,28 @@ def test_should_updateRoomMetadata_when_secondSync(db: Session) -> None:
     assert room.room_name == "soma17 main (renamed)"
     assert room.last_synced_at is not None
     assert room.last_synced_at >= room.last_activity_at  # type: ignore[operator]
+
+
+def test_should_indexMessagesToQdrant_when_qdrantAndSolarProvided(db: Session) -> None:
+    """qdrant/solar 가 주입되면 메시지를 인덱싱해야 함."""
+    client = FakeWebexClient(
+        rooms=[_ROOM_PAYLOAD],
+        messages_by_room={
+            "ROOM1": [
+                _msg("M1", created="2026-05-05T10:00:00.000Z", text="hello qdrant"),
+            ]
+        },
+    )
+    mock_qdrant = MagicMock(spec=QdrantAdapter)
+    mock_solar = MagicMock(spec=SolarClient)
+    # solar.embed_passages 가 호출되므로 리턴값 설정 (rag_indexer 가 내부에서 사용)
+    mock_solar.embed_passages.return_value = [[0.1] * 128]
+
+    stats = webex_sync.run_sync(
+        db, client, qdrant=mock_qdrant, solar=mock_solar, now=_NOW
+    )
+
+    assert stats.messages_inserted == 1
+    assert stats.messages_indexed == 1
+    assert mock_qdrant.upsert.called
+    assert mock_solar.embed_passages.called
