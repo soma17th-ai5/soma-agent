@@ -57,4 +57,4 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }} # 스크립트 인젝션 방지용 환경변수
         run: |
           # /review 스킬을 실행하여 PR 번호에 대한 리뷰를 수행합니다.
-          claude -p "/review ${PR_NUMBER}"
+          claude -p "/review ${PR_NUMBER}. 단, CRITICAL(치명적) 등급의 이슈가 없다면 리뷰 상태(Review State)를 반드시 'APPROVE' 또는 'COMMENT'로 제출해. MINOR나 SUGGESTION 항목만 있을 때는 절대 'REQUEST_CHANGES'를 사용하여 머지를 막지 마."
