@@ -93,4 +93,4 @@ jobs:
 
             ### 참고
             테스트나 운영 관점에서 추가 확인할 점이 있으면 짧게 적으세요.
-          claude_args: "--max-turns 8"
+          claude_args: "--max-turns 60"
