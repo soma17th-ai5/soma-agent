@@ -8,7 +8,6 @@ import re
 from collections.abc import Iterator
 from datetime import datetime, timedelta
 from typing import Any
-
 from unittest.mock import MagicMock
 
 import pytest
