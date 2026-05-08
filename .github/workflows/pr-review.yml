@@ -2,6 +2,10 @@ name: Claude PR Review
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  workflow_dispatch:
 
 concurrency:
   group: pr-review-${{ github.event.pull_request.number }}
@@ -44,6 +48,7 @@ jobs:
         run: npm install -g @anthropic-ai/claude-code@2.1.126
 
       - name: Run Claude PR Review
+        continue-on-error: true
         timeout-minutes: 10 # 무한 대기 방지
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -52,4 +57,4 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }} # 스크립트 인젝션 방지용 환경변수
         run: |
           # /review 스킬을 실행하여 PR 번호에 대한 리뷰를 수행합니다.
-          claude -p "/review $PR_NUMBER"
+          claude -p "/review ${PR_NUMBER}"
