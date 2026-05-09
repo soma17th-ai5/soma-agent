@@ -27,11 +27,13 @@ class FakeOpenSoma:
     def __init__(self, list_pages: list[dict[str, Any]], details: dict[int, dict[str, Any]]):
         self._list_pages = list_pages
         self._details = details
+        self.detail_calls: list[int] = []
 
     def mentoring_list(self, session_id: str, page: int = 1, **_: Any) -> dict[str, Any]:
         return self._list_pages[page - 1] if page <= len(self._list_pages) else {"items": []}
 
     def mentoring_get(self, session_id: str, mentoring_id: int) -> dict[str, Any]:
+        self.detail_calls.append(mentoring_id)
         return self._details[mentoring_id]
 
 
@@ -91,41 +93,47 @@ def test_should_splitObjectFields_when_listItemHasNestedStructure(db: Session) -
     assert row.session_end_time.strftime("%H:%M") == "22:00"
     assert row.session_started_at is not None
     assert row.session_started_at.hour == 20
+    assert row.content_html is None
+    assert row.venue is None
+    assert fake.detail_calls == []
 
 
-def test_should_persistApplicantsAsHash_when_detailHasApplicants(db: Session) -> None:
+def test_should_notPersistApplicants_when_syncingListOnly(db: Session) -> None:
     fake = FakeOpenSoma(
         [{"items": [_SAMPLE_LIST_ITEM], "pagination": {"totalPages": 1}}],
         {10786: _SAMPLE_DETAIL},
     )
-    mentoring_service.run_sync(db, fake, session_id="sid")  # type: ignore[arg-type]
+    stats = mentoring_service.run_sync(db, fake, session_id="sid")  # type: ignore[arg-type]
     rows = db.execute(select(MentoringApplicant)).scalars().all()
-    assert len(rows) == 2
-    # 32자 hex
-    assert all(len(r.applicant_name_hash) == 32 for r in rows)
-    # 같은 이름은 같은 hash (결정성)
-    name_hashes = {r.applicant_name_hash for r in rows}
-    assert len(name_hashes) == 2  # 두 이름 다른 hash
+    assert rows == []
+    assert stats.applicants_persisted == 0
+    assert fake.detail_calls == []
 
 
-def test_should_replaceApplicants_when_resyncing(db: Session) -> None:
+def test_should_preserveDetailOnlyFields_when_resyncingListOnly(db: Session) -> None:
     fake = FakeOpenSoma(
         [{"items": [_SAMPLE_LIST_ITEM], "pagination": {"totalPages": 1}}],
         {10786: _SAMPLE_DETAIL},
     )
     mentoring_service.run_sync(db, fake, session_id="sid")  # type: ignore[arg-type]
+    row = db.execute(select(Mentoring)).scalar_one()
+    row.content_html = "<p>기존 상세</p>"
+    row.venue = "기존 장소"
+    db.commit()
 
     # 응답이 바뀐 상태 시뮬레이션 (content_hash 변경 유도)
     item2 = dict(_SAMPLE_LIST_ITEM, status="진행중")
-    detail2 = dict(_SAMPLE_DETAIL, applicants=[{"name": "새인물", "appliedAt": "2026-05-01", "status": "approved"}])
     fake2 = FakeOpenSoma(
         [{"items": [item2], "pagination": {"totalPages": 1}}],
-        {10786: detail2},
+        {10786: _SAMPLE_DETAIL},
     )
     stats = mentoring_service.run_sync(db, fake2, session_id="sid")  # type: ignore[arg-type]
     assert stats.updated == 1
-    rows = db.execute(select(MentoringApplicant)).scalars().all()
-    assert len(rows) == 1
+    row = db.execute(select(Mentoring)).scalar_one()
+    assert row.mentoring_status == "진행중"
+    assert row.content_html == "<p>기존 상세</p>"
+    assert row.venue == "기존 장소"
+    assert fake2.detail_calls == []
 
 
 def test_should_skipUnchanged_when_listResponseIdentical(db: Session) -> None:

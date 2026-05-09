@@ -294,10 +294,9 @@ def _detect_bot(person_email: str | None) -> bool:
 
 
 def _calc_cutoff(last_synced_at: datetime | None, now: datetime) -> datetime:
-    """24h 재조회 윈도우. last_synced_at 없으면 매우 오래전(epoch)으로."""
+    """24h 재조회 윈도우. 첫 동기화도 최근 24시간만 수집한다."""
     if last_synced_at is None:
-        # 첫 동기화 — 모든 메시지 수집. cutoff 를 epoch로 두어 break 하지 않게.
-        return datetime(1970, 1, 1, tzinfo=now.tzinfo)
+        return now - _RESCAN_WINDOW
     return last_synced_at - _RESCAN_WINDOW
 
 

@@ -147,6 +147,25 @@ def test_should_insertNewRoomAndMessages_when_firstSync(db: Session) -> None:
         assert "person-A" not in m.sender_key
 
 
+def test_should_limitFirstSyncToRecent24Hours(db: Session) -> None:
+    """첫 동기화도 전체 히스토리가 아니라 최근 24시간만 수집한다."""
+    client = FakeWebexClient(
+        rooms=[_ROOM_PAYLOAD],
+        messages_by_room={
+            "ROOM1": [
+                _msg("NEW", created="2026-05-05T10:00:00.000Z"),
+                _msg("OLD", created="2026-05-03T10:00:00.000Z"),
+            ]
+        },
+    )
+
+    stats = webex_sync.run_sync(db, client, now=_NOW)  # type: ignore[arg-type]
+
+    assert stats.messages_inserted == 1
+    rows = db.execute(select(WebexMessage)).scalars().all()
+    assert {row.message_id for row in rows} == {"NEW"}
+
+
 def test_should_skipUnchangedRoom_when_lastActivityNotAfterLastSynced(
     db: Session,
 ) -> None:
