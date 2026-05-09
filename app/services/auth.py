@@ -9,18 +9,50 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.adapters.opensoma_client import LoginResult, OpenSomaClient, WhoamiResult
+from app.adapters.opensoma_client import (
+    LoginResult,
+    OpenSomaClient,
+    OpenSomaClientError,
+    WhoamiResult,
+)
 from app.domain.models.user import User
+from app.observability.logging import get_logger
+
+log = get_logger("app.services.auth")
 
 
 def login(db: Session, client: OpenSomaClient, username: str, password: str) -> LoginResult:
     """sidecar로 로그인 위임 후 users 행 upsert. session_id 포함 결과 반환.
 
-    실패는 OpenSomaClientError로 전파 (api 레이어에서 HTTP 매핑).
+    실패는 OpenSomaClientError로 전파 (앱 레벨 핸들러가 HTTP로 매핑).
+    실패 시 username 컨텍스트로 마스킹 로그를 남긴다 — 라우터가 try/except 없이 끝낼 수 있게.
     """
-    result = client.login(username, password)
+    try:
+        result = client.login(username, password)
+    except OpenSomaClientError as err:
+        log.warning(
+            "auth.login_failed",
+            code=err.code,
+            status=err.status,
+            user_hint=_mask_username(username),
+        )
+        raise
     upsert_user_from_login(db, result)
     return result
+
+
+def logout(client: OpenSomaClient, session_id: str) -> None:
+    """sidecar 로그아웃 위임. 업스트림 실패는 무시 (graceful) — 클라이언트는 어차피 핸들 폐기."""
+    try:
+        client.logout(session_id)
+    except OpenSomaClientError as err:
+        log.info("auth.logout_upstream_error", code=err.code, status=err.status)
+
+
+def _mask_username(username: str) -> str:
+    """로그용 username 마스크. 절반 이하·최대 3자만 노출."""
+    visible = username[: min(3, len(username) // 2)]
+    return f"{visible}***"
 
 
 def upsert_user_from_login(db: Session, login_result: LoginResult) -> User:

@@ -2,19 +2,22 @@
 
 - get_db: DB 세션 주입
 - get_opensoma_client: sidecar 클라이언트 주입
-- get_session_id: X-Soma-Session 헤더 추출. 누락 시 401 SOMA_AUTH_REQUIRED.
-- session_expired_exc: 401 SESSION_EXPIRED 응답 헬퍼 (X-Soma-Session-Expired 헤더 동반).
+- get_session_id: X-Soma-Session 헤더 추출. 누락 시 SomaAuthRequired raise.
+
+도메인 예외는 `app.errors`에 정의되어 있고, 핸들러가 표준 응답으로 변환한다 — 여기서
+HTTPException을 직접 만들지 않는다.
 """
 from __future__ import annotations
 
 from collections.abc import Generator
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header
 from sqlalchemy.orm import Session
 
 from app.adapters.opensoma_client import OpenSomaClient
 from app.db.session import get_db as _get_db
+from app.errors.exceptions import SomaAuthRequired
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -27,26 +30,8 @@ def get_opensoma_client() -> OpenSomaClient:
 
 def get_session_id(x_soma_session: Annotated[str | None, Header()] = None) -> str:
     if not x_soma_session:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={
-                "code": "SOMA_AUTH_REQUIRED",
-                "message": "X-Soma-Session header is required",
-            },
-        )
+        raise SomaAuthRequired()
     return x_soma_session
-
-
-def session_expired_exc() -> HTTPException:
-    """sidecar에서 401 SESSION_EXPIRED를 받았을 때 클라이언트로 전파."""
-    return HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail={
-            "code": "SESSION_EXPIRED",
-            "message": "OpenSoma session has expired. Please re-login.",
-        },
-        headers={"X-Soma-Session-Expired": "true"},
-    )
 
 
 SessionId = Annotated[str, Depends(get_session_id)]
