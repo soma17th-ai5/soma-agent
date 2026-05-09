@@ -1,0 +1,60 @@
+name: Claude PR Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # 봇에 의한 무한 루프 방지
+    if: github.actor != 'dependabot[bot]' && github.actor != 'github-actions[bot]' && github.actor != 'renovate[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # PR diff 분석을 위해 전체 히스토리 필요
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check for Claude OAuth Token
+        env:
+          # 시크릿을 직접 run에 쓰지 않고 환경변수로 전달 (보안 강화)
+          CLAUDE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -z "$CLAUDE_OAUTH_TOKEN" ]; then
+            echo "Error: CLAUDE_CODE_OAUTH_TOKEN is not set in GitHub Secrets."
+            echo "Please add it to the repository's Action secrets to enable automated PR reviews."
+            exit 1
+          fi
+
+      - name: Install Claude Code CLI
+        # 버전 고정으로 브레이킹 체인지 예방
+        run: npm install -g @anthropic-ai/claude-code@2.1.126
+
+      - name: Run Claude PR Review
+        continue-on-error: true
+        timeout-minutes: 10 # 무한 대기 방지
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }} # 스크립트 인젝션 방지용 환경변수
+        run: |
+          # /review 스킬을 실행하여 PR 번호에 대한 리뷰를 수행합니다.
+          claude -p "/review ${PR_NUMBER}. 단, CRITICAL(치명적) 등급의 이슈가 없다면 리뷰 상태(Review State)를 반드시 'APPROVE' 또는 'COMMENT'로 제출해. MINOR나 SUGGESTION 항목만 있을 때는 절대 'REQUEST_CHANGES'를 사용하여 머지를 막지 마."

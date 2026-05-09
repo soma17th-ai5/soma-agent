@@ -1,0 +1,96 @@
+name: Claude PR Review Once
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Review target PR number"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Collect PR context
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          gh pr view "$PR_NUMBER" \
+            --json number,title,body,author,baseRefName,headRefName,changedFiles,additions,deletions \
+            > pr-context.json
+
+          gh pr diff "$PR_NUMBER" > pr.diff
+
+      - name: Claude Korean PR Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          prompt: |
+            PR #${{ inputs.pr_number }}를 코드리뷰하세요.
+
+            반드시 한국어로 작성하세요.
+
+            현재 workspace에 다음 파일이 있습니다.
+            - pr-context.json: PR 메타데이터
+            - pr.diff: PR 전체 diff
+
+            할 일:
+            1. pr-context.json과 pr.diff를 읽고 리뷰하세요.
+            2. 실제 문제가 있는 항목만 지적하세요.
+            3. 단순 취향, 포매팅, 사소한 네이밍은 지적하지 마세요.
+            4. 리뷰 결과를 PR #${{ inputs.pr_number }}에 하나의 코멘트로 남기세요.
+            5. 코드 수정, 커밋, 푸시는 절대 하지 마세요.
+
+            중점적으로 볼 것:
+            - 실제 버그 또는 동작 회귀
+            - 인증/인가/세션 처리 문제
+            - OpenSoma 연동 방식 위반
+            - DB 마이그레이션 또는 데이터 정합성 문제
+            - FastAPI 에러 응답 형식 불일치
+            - 테스트 누락
+            - 운영 리스크
+            - 보안 문제
+
+            이 저장소의 주요 규칙:
+            - OpenSoma 실제 호출은 FastAPI가 직접 하지 않고 opensoma-sidecar를 통해 수행해야 합니다.
+            - 비밀번호나 OpenSoma 원본 쿠키를 DB, 로그, 클라이언트에 저장하거나 노출하면 안 됩니다.
+            - FastAPI 에러 응답은 가능한 한 {"code": "...", "message": "..."} 형태를 따라야 합니다.
+            - 테스트 없이 PR을 머지하면 안 됩니다.
+            - 불확실한 스키마/API/인증 변경은 추측하지 말고 질문해야 합니다.
+
+            출력 형식:
+
+            ## Claude 코드리뷰
+
+            ### Findings
+            문제가 있으면 심각도 순서대로 작성하세요.
+
+            - [P0/P1/P2/P3] 제목
+              - 위치: 파일 경로와 가능한 경우 라인
+              - 문제:
+              - 영향:
+              - 제안:
+
+            문제가 없으면 아래처럼 작성하세요.
+
+            ## Claude 코드리뷰
+
+            No blocking issues found.
+
+            ### 참고
+            테스트나 운영 관점에서 추가 확인할 점이 있으면 짧게 적으세요.
+          claude_args: "--max-turns 60"
