@@ -11,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.domain.contracts.action import ActionProposal, ActionResult
 from app.domain.models import Base
 from app.domain.models.application import Application
+from app.errors.exceptions import MentoringNotOpen
 from app.services import mentoring as mentoring_service
 
 
@@ -81,9 +82,11 @@ def test_should_callSidecar_when_applyConfirmed(db: Session) -> None:
 
 def test_should_raise_when_mentoringStatusClosed(db: Session) -> None:
     fake = FakeOpenSoma(detail=_CLOSED_DETAIL)
-    with pytest.raises(mentoring_service.MentoringNotApplicableError) as exc:
+    with pytest.raises(MentoringNotOpen) as exc:
         mentoring_service.apply(db, fake, "sid", "user@x.com", 11001, confirmed=False)  # type: ignore[arg-type]
-    assert exc.value.status == "마감"
+    assert exc.value.status_code == 409
+    assert exc.value.code == "MENTORING_NOT_OPEN"
+    assert "마감" in exc.value.message
 
 
 def test_should_invalidateApplicationsCache_when_applyConfirmed(db: Session) -> None:

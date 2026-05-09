@@ -265,17 +265,8 @@ def _searchable_text(item: dict[str, Any], detail: dict[str, Any]) -> str:
 # =====================================================================
 
 from app.domain.contracts.action import ActionProposal, ActionResult  # noqa: E402
+from app.errors.exceptions import MentoringNotOpen  # noqa: E402
 from app.services import application as application_service  # noqa: E402
-
-
-class MentoringNotApplicableError(Exception):
-    """현재 멘토링 상태로는 신청 불가."""
-
-    def __init__(self, mentoring_id: int, status: str | None) -> None:
-        super().__init__(f"mentoring {mentoring_id} status={status!r} is not open for apply")
-        self.mentoring_id = mentoring_id
-        self.status = status
-
 
 _OPEN_STATUSES = {"접수중", "open", "OPEN"}
 
@@ -292,12 +283,15 @@ def apply(
     """1차(confirmed=False): 직전 detail 재검증 + ActionProposal 반환 (실행 X).
     2차(confirmed=True):     sidecar apply 호출 → applications 캐시 무효화 → ActionResult.
 
-    raises MentoringNotApplicableError: 현재 status 가 접수중이 아닐 때
+    raises MentoringNotOpen: 현재 status 가 접수중이 아닐 때
     """
     detail = opensoma.mentoring_get(session_id, mentoring_id)
     status = detail.get("status")
     if status not in _OPEN_STATUSES:
-        raise MentoringNotApplicableError(mentoring_id, status)
+        # status 컨텍스트는 응답 본문 message에 포함시켜 클라이언트에 전달.
+        raise MentoringNotOpen(
+            f"멘토링이 신청 가능 상태가 아닙니다 (현재: {status!r})",
+        )
 
     if not confirmed:
         return ActionProposal(

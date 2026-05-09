@@ -1,11 +1,13 @@
-"""사용자 접수 내역 조회. TTL 캐시 우선 + force_refresh 옵션."""
+"""사용자 접수 내역 조회. TTL 캐시 우선 + force_refresh 옵션.
+
+업스트림 예외는 raise만 — app-level 핸들러가 표준 응답으로 변환한다.
+"""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.adapters.opensoma_client import OpenSomaClientError
-from app.api.deps import DbSession, SessionId, SomaClient, session_expired_exc
+from app.api.deps import DbSession, SessionId, SomaClient
 from app.observability.logging import get_logger
 from app.services import application as application_service
 
@@ -40,18 +42,9 @@ def list_history(
     soma_user_id: str,
     force_refresh: bool = False,
 ) -> HistoryResponse:
-    try:
-        result = application_service.get_history(
-            db, client, session_id, soma_user_id, force_refresh=force_refresh
-        )
-    except OpenSomaClientError as err:
-        if err.status == 401 and err.code == "SESSION_EXPIRED":
-            raise session_expired_exc() from err
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"code": "UPSTREAM_UNAVAILABLE", "message": "OpenSoma is temporarily unavailable"},
-        ) from err
-
+    result = application_service.get_history(
+        db, client, session_id, soma_user_id, force_refresh=force_refresh
+    )
     return HistoryResponse(
         items=[
             HistoryItem(
