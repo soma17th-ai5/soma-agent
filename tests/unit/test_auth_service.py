@@ -5,9 +5,9 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.adapters.opensoma_client import LoginResult, WhoamiResult
-from app.domain.models import Base
-from app.domain.models.user import User
+from app.domain.dtos.auth import LoginDTO, WhoamiDTO
+from app.domain.orm import Base
+from app.domain.orm.user import User
 from app.services import auth as auth_service
 
 
@@ -19,8 +19,8 @@ def db() -> Session:
     return SessionLocal()
 
 
-def _login_result(role: str = "TRAINEE") -> LoginResult:
-    return LoginResult(
+def _login_result(role: str = "TRAINEE") -> LoginDTO:
+    return LoginDTO(
         session_id="sid",
         soma_user_id="user@x.com",
         user_no="a" * 32,
@@ -39,7 +39,7 @@ def test_should_insertUser_when_userNoIsNew(db: Session) -> None:
 
 def test_should_updateUserName_when_userNoExists(db: Session) -> None:
     auth_service.upsert_user_from_login(db, _login_result())
-    updated = LoginResult(
+    updated = LoginDTO(
         session_id="sid2",
         soma_user_id="user@x.com",
         user_no="a" * 32,
@@ -60,7 +60,7 @@ def test_should_preserveOperatorRole_when_sidecarReturnsTrainee(db: Session) -> 
 
     auth_service.upsert_user_from_whoami(
         db,
-        WhoamiResult(
+        WhoamiDTO(
             soma_user_id="user@x.com",
             user_no="a" * 32,
             user_name="홍길동",
@@ -74,7 +74,7 @@ def test_should_preserveOperatorRole_when_sidecarReturnsTrainee(db: Session) -> 
 def test_should_acceptMentorRole_when_sidecarReturnsT(db: Session) -> None:
     user = auth_service.upsert_user_from_whoami(
         db,
-        WhoamiResult(
+        WhoamiDTO(
             soma_user_id="user@x.com",
             user_no="b" * 32,
             user_name="멘토",

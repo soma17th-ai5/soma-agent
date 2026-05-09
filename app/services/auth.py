@@ -9,19 +9,15 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.adapters.opensoma_client import (
-    LoginResult,
-    OpenSomaClient,
-    OpenSomaClientError,
-    WhoamiResult,
-)
-from app.domain.models.user import User
+from app.adapters.opensoma_client import OpenSomaClient, OpenSomaClientError
+from app.domain.dtos.auth import LoginDTO, WhoamiDTO
+from app.domain.orm.user import User
 from app.observability.logging import get_logger
 
 log = get_logger("app.services.auth")
 
 
-def login(db: Session, client: OpenSomaClient, username: str, password: str) -> LoginResult:
+def login(db: Session, client: OpenSomaClient, username: str, password: str) -> LoginDTO:
     """sidecar로 로그인 위임 후 users 행 upsert. session_id 포함 결과 반환.
 
     실패는 OpenSomaClientError로 전파 (앱 레벨 핸들러가 HTTP로 매핑).
@@ -55,7 +51,7 @@ def _mask_username(username: str) -> str:
     return f"{visible}***"
 
 
-def upsert_user_from_login(db: Session, login_result: LoginResult) -> User:
+def upsert_user_from_login(db: Session, login_result: LoginDTO) -> User:
     return _upsert(
         db,
         soma_user_id=login_result.soma_user_id,
@@ -65,7 +61,7 @@ def upsert_user_from_login(db: Session, login_result: LoginResult) -> User:
     )
 
 
-def upsert_user_from_whoami(db: Session, whoami: WhoamiResult) -> User:
+def upsert_user_from_whoami(db: Session, whoami: WhoamiDTO) -> User:
     return _upsert(
         db,
         soma_user_id=whoami.soma_user_id,

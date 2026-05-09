@@ -14,14 +14,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.adapters.opensoma_client import (
-    LoginResult,
-    OpenSomaClient,
-    OpenSomaClientError,
-    WhoamiResult,
-)
+from app.adapters.opensoma_client import OpenSomaClient, OpenSomaClientError
 from app.api import deps
-from app.domain.models import Base
+from app.domain.dtos.auth import LoginDTO, WhoamiDTO
+from app.domain.orm import Base
 from app.main import create_app
 
 
@@ -32,11 +28,11 @@ class FakeOpenSomaClient(OpenSomaClient):
         # super().__init__() 호출 안 함 — settings 의존 회피
         self.calls: list[tuple[str, Any]] = []
 
-    def login(self, username: str, password: str) -> LoginResult:  # type: ignore[override]
+    def login(self, username: str, password: str) -> LoginDTO:  # type: ignore[override]
         self.calls.append(("login", (username, password)))
         if username == "bad":
             raise OpenSomaClientError(401, "INVALID_CREDENTIALS", "login failed")
-        return LoginResult(
+        return LoginDTO(
             session_id="test-sid",
             soma_user_id=username,
             user_no="0" * 32,
@@ -47,11 +43,11 @@ class FakeOpenSomaClient(OpenSomaClient):
     def logout(self, session_id: str) -> None:  # type: ignore[override]
         self.calls.append(("logout", session_id))
 
-    def whoami(self, session_id: str) -> WhoamiResult:  # type: ignore[override]
+    def whoami(self, session_id: str) -> WhoamiDTO:  # type: ignore[override]
         self.calls.append(("whoami", session_id))
         if session_id == "expired":
             raise OpenSomaClientError(401, "SESSION_EXPIRED", "expired")
-        return WhoamiResult(
+        return WhoamiDTO(
             soma_user_id="u@x.com",
             user_no="0" * 32,
             user_name="테스트",

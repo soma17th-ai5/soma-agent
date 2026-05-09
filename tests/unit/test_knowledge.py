@@ -11,7 +11,7 @@ import pytest
 from qdrant_client import QdrantClient
 
 from app.adapters.qdrant_client import QdrantAdapter
-from app.domain.contracts.knowledge import KnowledgeSourceType, SearchHit
+from app.domain.dtos.knowledge import KnowledgeSourceType, SearchHit
 from app.services.knowledge import search
 from app.services.rag_indexer import index_chunks
 
