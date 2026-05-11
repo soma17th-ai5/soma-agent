@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
-from pydantic import Field
 
 from app.api.deps import DbSession, SessionId, SomaClient
 from app.domain.contracts.action import ActionExecutionRequest, ActionExecutionResponse
@@ -26,14 +25,14 @@ def execute_action(
 ) -> ActionExecutionResponse:
     """ActionProposal/카드 액션을 실제로 수행한다."""
     trace_id = getattr(request.state, "trace_id", "unknown")
-    
+
     log.info(
         "action.execute_requested",
         action_type=body.action_type,
         user_id=body.soma_user_id,
         trace_id=trace_id,
     )
-    
+
     return action_service.execute(
         db,
         client,

@@ -59,22 +59,22 @@ class MentoringApplyHandler(ActionHandler):
 
         # 2. 신청 수행
         result = opensoma.mentoring_apply(session_id, mentoring_id)
-        
+
         # 3. 캘린더 초대 (mock) — 실패해도 신청 결과는 유지
         try:
             from datetime import datetime
-            
+
             # OpenSoma 응답에서 일시 추출 (PoC 실측 기반)
             # sessionDate: "2026-05-31", sessionTime: {"start": "20:00", "end": "22:00"}
             date_str = detail.get("sessionDate")
             time_obj = detail.get("sessionTime") or {}
             start_t = time_obj.get("start")
             end_t = time_obj.get("end")
-            
+
             if date_str and start_t and end_t:
                 start_dt = datetime.fromisoformat(f"{date_str}T{start_t}")
                 end_dt = datetime.fromisoformat(f"{date_str}T{end_t}")
-                
+
                 cal = CalendarMock()
                 cal_res = cal.create_invite(
                     title=f"[Soma] {detail.get('title')}",
@@ -92,7 +92,7 @@ class MentoringApplyHandler(ActionHandler):
 
         # 4. 캐시 무효화
         application_service.invalidate(db, soma_user_id)
-        
+
         return {
             "apply_sn": result.get("apply_sn"),
             "qustnr_sn": result.get("qustnr_sn"),
@@ -121,7 +121,7 @@ class MentoringCancelHandler(ActionHandler):
         if not apply_sn or not qustnr_sn:
             if not mentoring_id:
                 raise InvalidRequest("applySn/qustnrSn or mentoringId is required")
-            
+
             # 매핑 시도
             apply_sn, qustnr_sn = self._map_mentoring_to_apply(
                 db, opensoma, session_id, soma_user_id, mentoring_id
@@ -129,10 +129,10 @@ class MentoringCancelHandler(ActionHandler):
 
         # 취소 수행
         opensoma.mentoring_cancel(session_id, apply_sn=apply_sn, qustnr_sn=qustnr_sn)
-        
+
         # 캐시 무효화
         application_service.invalidate(db, soma_user_id)
-        
+
         return {"apply_sn": apply_sn, "qustnr_sn": qustnr_sn}
 
     def _map_mentoring_to_apply(

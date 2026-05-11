@@ -1,7 +1,7 @@
 """도메인 액션 디스패처 단위 테스트."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy import create_engine
@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.adapters.opensoma_client import OpenSomaClient
 from app.domain.models import Base
 from app.domain.models.application import Application
-from app.errors.exceptions import ActionConflict, InvalidActionType, InvalidRequest
+from app.errors.exceptions import InvalidActionType, InvalidRequest
 from app.services.actions import action_service
 
 
@@ -46,13 +46,13 @@ def test_should_applyMentoring_when_statusOpen(db: Session, opensoma: MagicMock)
         "qustnr_sn": 456,
         "title": "테스트 멘토링",
     }
-    
+
     # When
     res = action_service.execute(
-        db, opensoma, "sess-1", "user-1", "MENTORING_APPLY", 
+        db, opensoma, "sess-1", "user-1", "MENTORING_APPLY",
         {"mentoringId": 1001}, "trace-1"
     )
-    
+
     # Then
     assert res.status == "success"
     assert res.payload["apply_sn"] == 123
@@ -66,13 +66,13 @@ def test_should_returnConflict_when_mentoringStatusClosed(db: Session, opensoma:
         "title": "마감된 멘토링",
         "status": "마감",
     }
-    
+
     # When
     res = action_service.execute(
-        db, opensoma, "sess-1", "user-1", "MENTORING_APPLY", 
+        db, opensoma, "sess-1", "user-1", "MENTORING_APPLY",
         {"mentoringId": 1001}, "trace-1"
     )
-    
+
     # Then
     assert res.status == "failed"
     assert "불가능한 상태" in res.message
@@ -82,10 +82,10 @@ def test_should_returnConflict_when_mentoringStatusClosed(db: Session, opensoma:
 def test_should_cancelWithDirectSns_when_payloadProvidesThem(db: Session, opensoma: MagicMock) -> None:
     # When
     res = action_service.execute(
-        db, opensoma, "sess-1", "user-1", "MENTORING_CANCEL", 
+        db, opensoma, "sess-1", "user-1", "MENTORING_CANCEL",
         {"applySn": 123, "qustnrSn": 456}, "trace-1"
     )
-    
+
     # Then
     assert res.status == "success"
     opensoma.mentoring_cancel.assert_called_once_with("sess-1", apply_sn=123, qustnr_sn=456)
@@ -99,13 +99,13 @@ def test_should_cancelWithMapping_when_onlyMentoringIdProvided(db: Session, open
         soma_user_id="user-1", title="매핑용 멘토링", apply_sn=123, qustnr_sn=456
     ))
     db.commit()
-    
+
     # When
     res = action_service.execute(
-        db, opensoma, "sess-1", "user-1", "MENTORING_CANCEL", 
+        db, opensoma, "sess-1", "user-1", "MENTORING_CANCEL",
         {"mentoringId": 1001}, "trace-1"
     )
-    
+
     # Then
     assert res.status == "success"
     assert res.payload["apply_sn"] == 123
@@ -124,13 +124,13 @@ def test_should_retryMappingWithForceRefresh_when_initialCacheMiss(db: Session, 
         }],
         "pagination": {"totalPages": 1}
     }
-    
+
     # When
     res = action_service.execute(
-        db, opensoma, "sess-1", "user-1", "MENTORING_CANCEL", 
+        db, opensoma, "sess-1", "user-1", "MENTORING_CANCEL",
         {"mentoringId": 1001}, "trace-1"
     )
-    
+
     # Then
     assert res.status == "success"
     assert res.payload["apply_sn"] == 999
@@ -142,7 +142,7 @@ def test_should_raiseInvalidRequest_when_onlyOneSnProvided(db: Session, opensoma
     # When/Then
     with pytest.raises(InvalidRequest) as exc:
         action_service.execute(
-            db, opensoma, "sess-1", "user-1", "MENTORING_CANCEL", 
+            db, opensoma, "sess-1", "user-1", "MENTORING_CANCEL",
             {"applySn": 123}, "trace-1"
         )
     assert "Both applySn and qustnrSn" in str(exc.value)
@@ -152,6 +152,6 @@ def test_should_raiseInvalidActionType_when_unknownType(db: Session, opensoma: M
     # When/Then
     with pytest.raises(InvalidActionType):
         action_service.execute(
-            db, opensoma, "sess-1", "user-1", "UNKNOWN_ACTION", 
+            db, opensoma, "sess-1", "user-1", "UNKNOWN_ACTION",
             {}, "trace-1"
         )

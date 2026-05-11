@@ -1,13 +1,12 @@
 """도메인 액션 API 통합 테스트."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
-
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.adapters.opensoma_client import OpenSomaClient
@@ -51,7 +50,7 @@ def test_should_returnTraceId_in_actionResponse(client: TestClient, opensoma_moc
         "sessionTime": {"start": "20:00", "end": "22:00"},
     }
     opensoma_mock.mentoring_apply.return_value = {"apply_sn": 1, "qustnr_sn": 2}
-    
+
     # When
     response = client.post(
         "/api/v1/actions/execute",
@@ -62,7 +61,7 @@ def test_should_returnTraceId_in_actionResponse(client: TestClient, opensoma_moc
         },
         headers={"X-Soma-Session": "dummy-session"}
     )
-    
+
     # Then
     assert response.status_code == 200
     data = response.json()
@@ -82,7 +81,7 @@ def test_should_return422_when_invalidActionType(client: TestClient) -> None:
         },
         headers={"X-Soma-Session": "dummy-session"}
     )
-    
+
     # Then
     assert response.status_code == 422
     data = response.json()
