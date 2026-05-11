@@ -8,10 +8,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.adapters.opensoma_client import OpenSomaClient
+from app.adapters.opensoma_client import OpenSomaClient, OpenSomaClientError
 from app.domain.models import Base
 from app.domain.models.application import Application
-from app.errors.exceptions import InvalidActionType, InvalidRequest
+from app.errors.exceptions import ActionConflict, InvalidActionType, InvalidRequest
 from app.services.actions import action_service
 
 
@@ -60,23 +60,71 @@ def test_should_applyMentoring_when_statusOpen(db: Session, opensoma: MagicMock)
     opensoma.mentoring_apply.assert_called_once_with("sess-1", 1001)
 
 
-def test_should_returnConflict_when_mentoringStatusClosed(db: Session, opensoma: MagicMock) -> None:
+def test_should_raiseActionConflict_when_mentoringStatusClosed(db: Session, opensoma: MagicMock) -> None:
     # Given
     opensoma.mentoring_get.return_value = {
         "title": "마감된 멘토링",
         "status": "마감",
     }
 
-    # When
-    res = action_service.execute(
-        db, opensoma, "sess-1", "user-1", "MENTORING_APPLY",
-        {"mentoringId": 1001}, "trace-1"
-    )
-
-    # Then
-    assert res.status == "failed"
-    assert "불가능한 상태" in res.message
+    # When/Then
+    with pytest.raises(ActionConflict) as exc:
+        action_service.execute(
+            db, opensoma, "sess-1", "user-1", "MENTORING_APPLY",
+            {"mentoringId": 1001}, "trace-1"
+        )
+    assert "불가능한 상태" in str(exc.value)
     opensoma.mentoring_apply.assert_not_called()
+
+
+def test_should_raiseInvalidRequest_when_mentoringIdMissing(db: Session, opensoma: MagicMock) -> None:
+    # When/Then
+    with pytest.raises(InvalidRequest) as exc:
+        action_service.execute(
+            db, opensoma, "sess-1", "user-1", "MENTORING_APPLY",
+            {}, "trace-1"
+        )
+    assert "mentoringId is required" in str(exc.value)
+
+
+def test_should_propagateUpstreamError_when_sidecarFails(db: Session, opensoma: MagicMock) -> None:
+    # Given
+    opensoma.mentoring_get.side_effect = OpenSomaClientError(503, "SERVICE_UNAVAILABLE", "Upstream error")
+
+    # When/Then
+    with pytest.raises(OpenSomaClientError) as exc:
+        action_service.execute(
+            db, opensoma, "sess-1", "user-1", "MENTORING_APPLY",
+            {"mentoringId": 1001}, "trace-1"
+        )
+    assert exc.value.status == 503
+
+
+def test_should_propagateAuthError_when_sessionExpired(db: Session, opensoma: MagicMock) -> None:
+    # Given
+    opensoma.mentoring_get.side_effect = OpenSomaClientError(401, "SOMA_AUTH_REQUIRED", "Session expired")
+
+    # When/Then
+    with pytest.raises(OpenSomaClientError) as exc:
+        action_service.execute(
+            db, opensoma, "sess-1", "user-1", "MENTORING_APPLY",
+            {"mentoringId": 1001}, "trace-1"
+        )
+    assert exc.value.status == 401
+
+
+def test_should_raiseActionConflict_when_cancelMappingFails(db: Session, opensoma: MagicMock) -> None:
+    # Given
+    opensoma.mentoring_get.return_value = {"title": "미신청 멘토링"}
+    opensoma.application_history.return_value = {"items": [], "pagination": {"totalPages": 1}}
+
+    # When/Then
+    with pytest.raises(ActionConflict) as exc:
+        action_service.execute(
+            db, opensoma, "sess-1", "user-1", "MENTORING_CANCEL",
+            {"mentoringId": 1001}, "trace-1"
+        )
+    assert "신청 내역에서 해당 멘토링을 찾을 수 없습니다" in str(exc.value)
 
 
 def test_should_cancelWithDirectSns_when_payloadProvidesThem(db: Session, opensoma: MagicMock) -> None:

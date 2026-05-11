@@ -86,3 +86,53 @@ def test_should_return422_when_invalidActionType(client: TestClient) -> None:
     assert response.status_code == 422
     data = response.json()
     assert data["code"] == "INVALID_ACTION_TYPE"
+
+
+def test_should_return409_when_mentoringStatusClosed(client: TestClient, opensoma_mock: MagicMock) -> None:
+    # Given
+    opensoma_mock.mentoring_get.return_value = {
+        "title": "마감된 멘토링",
+        "status": "마감",
+    }
+
+    # When
+    response = client.post(
+        "/api/v1/actions/execute",
+        json={
+            "actionType": "MENTORING_APPLY",
+            "payload": {"mentoringId": 123},
+            "somaUserId": "user-1",
+        },
+        headers={"X-Soma-Session": "dummy-session"}
+    )
+
+    # Then
+    assert response.status_code == 409
+    data = response.json()
+    assert data["code"] == "ACTION_CONFLICT"
+    assert "불가능한 상태" in data["message"]
+
+
+def test_should_return409_when_cancelMappingFails(
+    client: TestClient, opensoma_mock: MagicMock, db_session: Session
+) -> None:
+    # Given
+    opensoma_mock.mentoring_get.return_value = {"title": "신청 안한 멘토링"}
+    opensoma_mock.application_history.return_value = {"items": [], "pagination": {"totalPages": 1}}
+
+    # When
+    response = client.post(
+        "/api/v1/actions/execute",
+        json={
+            "actionType": "MENTORING_CANCEL",
+            "payload": {"mentoringId": 123},
+            "somaUserId": "user-1",
+        },
+        headers={"X-Soma-Session": "dummy-session"}
+    )
+
+    # Then
+    assert response.status_code == 409
+    data = response.json()
+    assert data["code"] == "ACTION_CONFLICT"
+    assert "해당 멘토링을 찾을 수 없습니다" in data["message"]

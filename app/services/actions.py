@@ -6,6 +6,7 @@ OpenSoma 상태 재검증, 캐시 무효화, 캘린더 초대(mock) 등 후속 �
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -19,7 +20,7 @@ from app.services import application as application_service
 
 log = get_logger("app.services.actions")
 
-_OPEN_STATUSES = {"접수중", "open", "OPEN"}
+_OPEN_STATUSES = {"접수중", "open"}
 
 
 class ActionHandler(ABC):
@@ -51,10 +52,10 @@ class MentoringApplyHandler(ActionHandler):
 
         # 1. 상태 재검증
         detail = opensoma.mentoring_get(session_id, mentoring_id)
-        status = detail.get("status")
+        status = (detail.get("status") or "").lower()
         if status not in _OPEN_STATUSES:
             raise ActionConflict(
-                f"멘토링 신청이 불가능한 상태입니다 (현재: {status!r})",
+                f"멘토링 신청이 불가능한 상태입니다 (현재: {detail.get('status')!r})",
             )
 
         # 2. 신청 수행
@@ -62,8 +63,6 @@ class MentoringApplyHandler(ActionHandler):
 
         # 3. 캘린더 초대 (mock) — 실패해도 신청 결과는 유지
         try:
-            from datetime import datetime
-
             # OpenSoma 응답에서 일시 추출 (PoC 실측 기반)
             # sessionDate: "2026-05-31", sessionTime: {"start": "20:00", "end": "22:00"}
             date_str = detail.get("sessionDate")
@@ -153,13 +152,13 @@ class MentoringCancelHandler(ActionHandler):
         history = application_service.get_history(db, opensoma, session_id, soma_user_id, force_refresh=False)
         for item in history.items:
             if item.title == target_title:
-                return item.apply_sn, item.qustnr_sn or 0
+                return item.apply_sn, item.qustnr_sn or mentoring_id
 
         # 2. 캐시 미스 시 강제 재조회
         history = application_service.get_history(db, opensoma, session_id, soma_user_id, force_refresh=True)
         for item in history.items:
             if item.title == target_title:
-                return item.apply_sn, item.qustnr_sn or 0
+                return item.apply_sn, item.qustnr_sn or mentoring_id
 
         raise ActionConflict(
             f"신청 내역에서 해당 멘토링을 찾을 수 없습니다: {target_title!r}. 이미 취소되었거나 신청한 적이 없는 것 같습니다.",
@@ -187,23 +186,14 @@ class ActionExecutionService:
         if not handler:
             raise InvalidActionType(f"Unsupported action type: {action_type}")
 
-        try:
-            result_payload = handler.execute(db, opensoma, session_id, soma_user_id, payload)
-            return ActionExecutionResponse(
-                actionType=action_type,
-                status="success",
-                message="요청하신 액션을 성공적으로 완료했습니다.",
-                payload=result_payload,
-                traceId=trace_id,
-            )
-        except ActionConflict as e:
-            # 409 Conflict는 status="failed"로 내려주되, message는 예외 메시지 사용
-            return ActionExecutionResponse(
-                actionType=action_type,
-                status="failed",
-                message=str(e),
-                traceId=trace_id,
-            )
+        result_payload = handler.execute(db, opensoma, session_id, soma_user_id, payload)
+        return ActionExecutionResponse(
+            actionType=action_type,
+            status="success",
+            message="요청하신 액션을 성공적으로 완료했습니다.",
+            payload=result_payload,
+            traceId=trace_id,
+        )
 
 
 # 싱글톤 인스턴스
