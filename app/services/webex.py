@@ -15,6 +15,7 @@
 
 이번 이슈 범위는 RDB 저장 + 익명화 + Qdrant 인덱싱.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -26,9 +27,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters.webex_client import WebexClient
-from app.domain.contracts.knowledge import KnowledgeSourceType
 from app.domain.models.webex import WebexMessage, WebexRoom
-from app.services.rag_indexer import index_chunks, index_webex_messages
+from app.services.rag_indexer import index_webex_messages
 from app.utils.hashing import anonymize_many, anonymize_person_id
 
 if TYPE_CHECKING:
@@ -107,9 +107,7 @@ def run_sync(
 
         # 워터마크는 last_activity_at 과 now 중 더 큰 값 (SPEC §7.4).
         room.last_synced_at = (
-            max(room.last_activity_at, current_time)
-            if room.last_activity_at
-            else current_time
+            max(room.last_activity_at, current_time) if room.last_activity_at else current_time
         )
 
         logger.info(
@@ -121,9 +119,7 @@ def run_sync(
 
     # 신규 또는 수정된 메시지면 Qdrant 인덱싱 수행
     if qdrant and solar and messages_to_index:
-        stats.messages_indexed = index_webex_messages(
-            qdrant, solar, messages_to_index
-        )
+        stats.messages_indexed = index_webex_messages(qdrant, solar, messages_to_index)
 
     db.commit()
     logger.info(
@@ -140,9 +136,7 @@ def run_sync(
 # ============================================================ helpers (room)
 
 
-def _upsert_room(
-    db: Session, payload: dict[str, Any], *, now: datetime
-) -> tuple[WebexRoom, bool]:
+def _upsert_room(db: Session, payload: dict[str, Any], *, now: datetime) -> tuple[WebexRoom, bool]:
     """룸 upsert. `last_activity_at <= last_synced_at` 면 메시지 동기화 skip.
 
     Returns:
@@ -181,9 +175,7 @@ def _upsert_room(
     room.room_type = payload.get("type", room.room_type)
     room.is_locked = bool(payload.get("isLocked", room.is_locked))
     room.is_public = bool(payload.get("isPublic", room.is_public))
-    room.is_announcement_only = bool(
-        payload.get("isAnnouncementOnly", room.is_announcement_only)
-    )
+    room.is_announcement_only = bool(payload.get("isAnnouncementOnly", room.is_announcement_only))
     room.team_id = payload.get("teamId", room.team_id)
     if creator_key is not None:
         room.creator_key = creator_key

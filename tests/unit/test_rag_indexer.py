@@ -3,6 +3,7 @@
 - chunk_text는 순수 함수 → 직접 검증.
 - index_chunks는 Qdrant in-memory + Solar mock으로 결합 검증.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -10,7 +11,6 @@ from unittest.mock import MagicMock
 
 import pytest
 from qdrant_client import QdrantClient
-from qdrant_client.http import models as qm
 
 from app.adapters.qdrant_client import QdrantAdapter
 from app.domain.contracts.knowledge import KnowledgeSourceType
@@ -28,9 +28,7 @@ TEST_VECTOR_SIZE = 8
 @pytest.fixture
 def qdrant() -> QdrantAdapter:
     raw = QdrantClient(":memory:")
-    adapter = QdrantAdapter(
-        client=raw, collection="rag_test", vector_size=TEST_VECTOR_SIZE
-    )
+    adapter = QdrantAdapter(client=raw, collection="rag_test", vector_size=TEST_VECTOR_SIZE)
     adapter.ensure_collection()
     return adapter
 
@@ -40,8 +38,7 @@ def solar_mock() -> MagicMock:
     mock = MagicMock()
     # 호출마다 input 길이만큼 결정적 벡터 반환.
     mock.embed_passages.side_effect = lambda texts: [
-        [float(i) + 0.01 * j for j in range(TEST_VECTOR_SIZE)]
-        for i, _ in enumerate(texts)
+        [float(i) + 0.01 * j for j in range(TEST_VECTOR_SIZE)] for i, _ in enumerate(texts)
     ]
     return mock
 
