@@ -10,13 +10,16 @@ from unittest.mock import MagicMock
 
 import pytest
 from qdrant_client import QdrantClient
+from qdrant_client.http import models as qm
 
 from app.adapters.qdrant_client import QdrantAdapter
 from app.domain.contracts.knowledge import KnowledgeSourceType
+from app.domain.models.webex import WebexMessage
 from app.services.rag_indexer import (
     _deterministic_chunk_id,
     chunk_text,
     index_chunks,
+    index_webex_messages,
 )
 
 TEST_VECTOR_SIZE = 8
@@ -204,3 +207,84 @@ def test_should_setRoomName_when_indexingWebexMessage(
     assert payload is not None
     assert payload["room_name"] == "ai5-general"
     assert payload["official"] is False
+
+
+def test_should_skipBotAndExtractPriorityContent_when_indexingWebexMessages(
+    qdrant: QdrantAdapter, solar_mock: MagicMock
+) -> None:
+    # 1. 봇 메시지 (스킵 대상)
+    bot_msg = WebexMessage(
+        message_id="BOT1",
+        is_bot_sender=True,
+        text="이것은 봇이 보내는 아주 긴 메시지입니다. 30자가 넘지만 봇이라서 스킵되어야 합니다.",
+        created_at=datetime(2026, 5, 5, tzinfo=UTC),
+        collected_at=datetime(2026, 5, 5, tzinfo=UTC),
+    )
+    # 2. 일반 메시지 (text 우선)
+    text_msg = WebexMessage(
+        message_id="MSG1",
+        is_bot_sender=False,
+        text="안녕하세요. 30자가 넘는 일반 텍스트 메시지입니다. 아주 아주 아주 아주 깁니다.",
+        markdown="# 마크다운",
+        created_at=datetime(2026, 5, 5, tzinfo=UTC),
+        collected_at=datetime(2026, 5, 5, tzinfo=UTC),
+    )
+    # 3. 마크다운 메시지 (text 없고 markdown만)
+    md_msg = WebexMessage(
+        message_id="MSG2",
+        is_bot_sender=False,
+        text=None,
+        markdown="이것은 마크다운 메시지입니다. 역시 30자가 넘어야 인덱싱이 됩니다. 룰루랄라.",
+        created_at=datetime(2026, 5, 5, tzinfo=UTC),
+        collected_at=datetime(2026, 5, 5, tzinfo=UTC),
+    )
+    # 4. HTML 메시지 (태그 제거 확인)
+    html_msg = WebexMessage(
+        message_id="MSG3",
+        is_bot_sender=False,
+        text=None,
+        markdown=None,
+        html="<p>이것은 <b>HTML</b> 메시지입니다. 태그를 제거하면 순수 텍스트만 남아야 하며 30자 기준을 통과해야 합니다.</p>",
+        created_at=datetime(2026, 5, 5, tzinfo=UTC),
+        collected_at=datetime(2026, 5, 5, tzinfo=UTC),
+    )
+    # 5. 짧은 메시지 (스킵 대상)
+    short_msg = WebexMessage(
+        message_id="MSG4",
+        is_bot_sender=False,
+        text="너무 짧아요",
+        created_at=datetime(2026, 5, 5, tzinfo=UTC),
+        collected_at=datetime(2026, 5, 5, tzinfo=UTC),
+    )
+
+    messages = [
+        (bot_msg, "RoomA"),
+        (text_msg, "RoomA"),
+        (md_msg, "RoomB"),
+        (html_msg, "RoomC"),
+        (short_msg, "RoomA"),
+    ]
+
+    count = index_webex_messages(qdrant, solar_mock, messages)
+
+    # MSG1, MSG2, MSG3 만 인덱싱되어야 함
+    assert count == 3
+
+    # MSG1 검증
+    res1 = qdrant.search([0.0] * TEST_VECTOR_SIZE, k=10, room_name="RoomA")
+    # RoomA 에는 MSG1 만 인덱싱됨 (short_msg 는 스킵되었으므로)
+    assert len(res1) == 1
+    assert "일반 텍스트 메시지" in res1[0].payload["text"]
+
+    # MSG2 검증
+    res2 = qdrant.search([0.0] * TEST_VECTOR_SIZE, k=10, room_name="RoomB")
+    assert len(res2) == 1
+    assert "마크다운 메시지" in res2[0].payload["text"]
+
+    # MSG3 검증 (HTML 태그 제거 확인)
+    res3 = qdrant.search([0.0] * TEST_VECTOR_SIZE, k=10, room_name="RoomC")
+    assert len(res3) == 1
+    assert "<b>" not in res3[0].payload["text"]
+    # BeautifulSoup separator="\n"으로 인해 "HTML" 주변에 개행이 생길 수 있음
+    assert "HTML" in res3[0].payload["text"]
+    assert "메시지입니다" in res3[0].payload["text"]

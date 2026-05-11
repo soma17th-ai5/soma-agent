@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 from app.adapters.webex_client import WebexClient
 from app.domain.contracts.knowledge import KnowledgeSourceType
 from app.domain.models.webex import WebexMessage, WebexRoom
-from app.services.rag_indexer import index_chunks
+from app.services.rag_indexer import index_chunks, index_webex_messages
 from app.utils.hashing import anonymize_many, anonymize_person_id
 
 if TYPE_CHECKING:
@@ -75,6 +75,7 @@ def run_sync(
     """
     current_time = now or _utc_now()
     stats = SyncStats()
+    messages_to_index: list[tuple[WebexMessage, str]] = []
 
     for room_payload in client.list_rooms(room_type="group"):
         room, was_skipped = _upsert_room(db, room_payload, now=current_time)
@@ -88,36 +89,21 @@ def run_sync(
 
         room_inserted = 0
         room_updated = 0
-        room_indexed = 0
         for msg_payload in client.list_messages(room_id=room.room_id):
             created_at = _parse_iso(msg_payload.get("created"))
             if created_at and created_at < cutoff:
                 # desc 정렬이라 cutoff 이전이면 더 이상 새 메시지 없음.
                 break
-            inserted, updated = _upsert_message(
+            msg, inserted, updated = _upsert_message(
                 db, msg_payload, default_room_type=room.room_type, now=current_time
             )
-            room_inserted += int(inserted)
-            room_updated += int(updated)
-
-            # 신규 또는 수정된 메시지면 Qdrant 인덱싱 수행
-            if (inserted or updated) and qdrant and solar and msg_payload.get("text"):
-                index_chunks(
-                    qdrant,
-                    solar,
-                    source_type=KnowledgeSourceType.WEBEX_MESSAGE,
-                    source_id=msg_payload["id"],
-                    title=f"Message in {room.room_name}",
-                    texts=[msg_payload.get("text")],
-                    official=False,
-                    room_name=room.room_name,
-                    created_at=created_at,
-                )
-                room_indexed += 1
+            if msg and (inserted or updated):
+                room_inserted += int(inserted)
+                room_updated += int(updated)
+                messages_to_index.append((msg, room.room_name or "Unknown Room"))
 
         stats.messages_inserted += room_inserted
         stats.messages_updated += room_updated
-        stats.messages_indexed += room_indexed
 
         # 워터마크는 last_activity_at 과 now 중 더 큰 값 (SPEC §7.4).
         room.last_synced_at = (
@@ -131,6 +117,12 @@ def run_sync(
             room_id=room.room_id,
             inserted=room_inserted,
             updated=room_updated,
+        )
+
+    # 신규 또는 수정된 메시지면 Qdrant 인덱싱 수행
+    if qdrant and solar and messages_to_index:
+        stats.messages_indexed = index_webex_messages(
+            qdrant, solar, messages_to_index
         )
 
     db.commit()
@@ -218,14 +210,14 @@ def _upsert_message(
     *,
     default_room_type: str | None,
     now: datetime,
-) -> tuple[bool, bool]:
-    """메시지 upsert. Returns (inserted, updated_existing)."""
+) -> tuple[WebexMessage | None, bool, bool]:
+    """메시지 upsert. Returns (message_obj, inserted, updated_existing)."""
     message_id = payload["id"]
     person_id = payload.get("personId")
     if not person_id:
         # personId 없는 메시지는 거의 없으나, 발견 시 sender_key 익명화 불가 → skip.
         logger.warning("webex.message_no_person", message_id=message_id)
-        return False, False
+        return None, False, False
 
     sender_key = anonymize_person_id(person_id)
     is_bot = _detect_bot(payload.get("personEmail"))
@@ -262,7 +254,7 @@ def _upsert_message(
         )
         db.add(msg)
         db.flush()
-        return True, False
+        return msg, True, False
 
     # 기존 메시지 — 수정/내용 변경 흡수.
     changed = False
@@ -277,7 +269,7 @@ def _upsert_message(
         if new_value is not None and getattr(existing, column) != new_value:
             setattr(existing, column, new_value)
             changed = True
-    return False, changed
+    return existing, False, changed
 
 
 def _detect_bot(person_email: str | None) -> bool:

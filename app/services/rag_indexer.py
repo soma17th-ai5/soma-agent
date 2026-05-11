@@ -23,11 +23,13 @@ from app.domain.contracts.knowledge import KnowledgeSourceType
 if TYPE_CHECKING:
     from app.adapters.qdrant_client import QdrantAdapter
     from app.adapters.solar_client import SolarClient
+    from app.domain.models.webex import WebexMessage
 
 
 # 단순 문자 기반 청킹 기본값. 한국어 평균을 고려해 ~800자 청크에 ~80자 overlap.
 DEFAULT_MAX_CHARS = 800
 DEFAULT_OVERLAP = 80
+MIN_TEXT_LENGTH = 30
 
 
 def chunk_text(
@@ -133,6 +135,62 @@ def index_chunks(
 
     qdrant.upsert(points)
     return len(points)
+
+
+def index_webex_messages(
+    qdrant: QdrantAdapter,
+    solar: SolarClient,
+    messages: list[tuple[WebexMessage, str]],
+) -> int:
+    """Webex 메시지 목록을 Qdrant에 인덱싱 (필터링/추출 로직 포함).
+
+    Args:
+        messages: (WebexMessage 모델, room_name) 튜플 목록.
+    """
+    from bs4 import BeautifulSoup
+
+    total_indexed = 0
+
+    for msg, room_name in messages:
+        # 1. 봇 메시지 스킵
+        if msg.is_bot_sender:
+            continue
+
+        # 2. 텍스트 추출 (text > markdown > html 우선순위)
+        content = ""
+        if msg.text:
+            content = msg.text
+        elif msg.markdown:
+            content = msg.markdown
+        elif msg.html:
+            # HTML 만 있는 경우 태그 제거
+            soup = BeautifulSoup(msg.html, "html.parser")
+            content = soup.get_text(separator="\n")
+
+        content = content.strip()
+
+        # 3. 30자 미만 스킵
+        # (단, 텍스트가 짧아지거나 비워진 경우 기존 인덱스 삭제를 위해 empty list를 index_chunks에 전달)
+        chunks = []
+        if len(content) >= MIN_TEXT_LENGTH:
+            chunks = chunk_text(content)
+
+        # 4. 인덱싱 (재인덱싱 시 index_chunks 내부에서 선삭제 수행)
+        indexed = index_chunks(
+            qdrant,
+            solar,
+            source_type=KnowledgeSourceType.WEBEX_MESSAGE,
+            source_id=msg.message_id,
+            title=f"Message in {room_name}",
+            texts=chunks,
+            official=False,
+            room_name=room_name,
+            created_at=msg.created_at,
+            collected_at=msg.collected_at,
+        )
+        total_indexed += indexed
+
+    return total_indexed
 
 
 def _deterministic_chunk_id(source_type: str, source_id: str, chunk_idx: int) -> str:

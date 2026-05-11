@@ -362,7 +362,7 @@ def test_should_indexMessagesToQdrant_when_qdrantAndSolarProvided(db: Session) -
         rooms=[_ROOM_PAYLOAD],
         messages_by_room={
             "ROOM1": [
-                _msg("M1", created="2026-05-05T10:00:00.000Z", text="hello qdrant"),
+                _msg("M1", created="2026-05-05T10:00:00.000Z", text="hello qdrant indexing test message that is longer than thirty characters"),
             ]
         },
     )
