@@ -28,3 +28,25 @@ class ActionResult(BaseModel):
     status: Literal["success", "failed"]
     message: str
     payload: dict[str, Any] | None = None
+
+
+class ActionExecutionRequest(BaseModel):
+    """도메인 액션 실행 요청."""
+
+    action_type: str = Field(alias="actionType")
+    payload: dict[str, Any]
+    soma_user_id: str = Field(alias="somaUserId", min_length=1)
+
+    model_config = {"populate_by_name": True}
+
+
+class ActionExecutionResponse(BaseModel):
+    """도메인 액션 실행 결과 응답."""
+
+    action_type: str = Field(alias="actionType")
+    status: Literal["success", "failed"]
+    message: str
+    payload: dict[str, Any] | None = None
+    trace_id: str = Field(alias="traceId")
+
+    model_config = {"populate_by_name": True}

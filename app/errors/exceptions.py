@@ -80,6 +80,14 @@ class InvalidRequest(BaseAPIException):
     message = "Invalid request"
 
 
+class InvalidActionType(BaseAPIException):
+    """지원하지 않는 actionType 요청."""
+
+    status_code = 422
+    code = codes.INVALID_ACTION_TYPE
+    message = "Invalid action type"
+
+
 # ─── 도메인 상태 ───────────────────────────────────────────────────────────────
 
 
@@ -89,6 +97,14 @@ class MentoringNotOpen(BaseAPIException):
     status_code = 409
     code = codes.MENTORING_NOT_OPEN
     message = "Mentoring is not open for application"
+
+
+class ActionConflict(BaseAPIException):
+    """상태 불일치로 요청을 수행할 수 없음 (이미 신청됨 등)."""
+
+    status_code = 409
+    code = codes.ACTION_CONFLICT
+    message = "Action conflict"
 
 
 # ─── 업스트림 ──────────────────────────────────────────────────────────────────
