@@ -9,8 +9,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.domain.orm import Base
-from app.domain.orm.application import Application
+from app.domain.models import Base
+from app.domain.models.application import Application
 from app.services import application as app_service
 
 

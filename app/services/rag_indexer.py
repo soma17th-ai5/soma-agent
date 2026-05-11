@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 from qdrant_client.http import models as qm
 
-from app.domain.dtos.knowledge import KnowledgeSourceType
+from app.domain.contracts.knowledge import KnowledgeSourceType
 
 if TYPE_CHECKING:
     from app.adapters.qdrant_client import QdrantAdapter

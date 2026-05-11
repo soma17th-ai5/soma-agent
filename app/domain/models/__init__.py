@@ -13,13 +13,13 @@ class Base(DeclarativeBase):
 
 
 # 도메인 모듈 등록 (메타데이터 수집을 위해 import 필요).
-from app.domain.orm.application import Application  # noqa: E402
-from app.domain.orm.mentoring import Mentoring, MentoringApplicant  # noqa: E402
-from app.domain.orm.notice import Notice  # noqa: E402
-from app.domain.orm.notice_attachment import NoticeAttachment  # noqa: E402
-from app.domain.orm.sync_state import SyncState  # noqa: E402
-from app.domain.orm.user import User  # noqa: E402
-from app.domain.orm.webex import WebexMessage, WebexRoom  # noqa: E402
+from app.domain.models.application import Application  # noqa: E402
+from app.domain.models.mentoring import Mentoring, MentoringApplicant  # noqa: E402
+from app.domain.models.notice import Notice  # noqa: E402
+from app.domain.models.notice_attachment import NoticeAttachment  # noqa: E402
+from app.domain.models.sync_state import SyncState  # noqa: E402
+from app.domain.models.user import User  # noqa: E402
+from app.domain.models.webex import WebexMessage, WebexRoom  # noqa: E402
 
 __all__ = [
     "Application",

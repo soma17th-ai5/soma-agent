@@ -6,15 +6,14 @@
 - POST /api/v1/mentoring/cancel       body: {apply_sn, qustnr_sn, confirmed?: bool}
 
 도메인/업스트림 예외는 raise만 하면 app-level 핸들러가 표준 응답으로 변환한다.
-Request 스키마는 `app.domain.schemas.mentoring`, Response DTO는 `app.domain.dtos.action`.
 """
 from __future__ import annotations
 
 from fastapi import APIRouter
+from pydantic import BaseModel, Field
 
 from app.api.deps import DbSession, SessionId, SomaClient
-from app.domain.dtos.action import ActionProposal, ActionResult
-from app.domain.schemas.mentoring import ApplyReq, CancelReq
+from app.domain.contracts.action import ActionProposal, ActionResult
 from app.errors.exceptions import InvalidRequest
 from app.observability.logging import get_logger
 from app.services import mentoring as mentoring_service
@@ -23,10 +22,22 @@ router = APIRouter(prefix="/api/v1/mentoring", tags=["mentoring"])
 log = get_logger("app.api.mentoring")
 
 
-@router.post("/{mentoring_id}/apply", response_model=ActionProposal | ActionResult)
+class ApplyRequest(BaseModel):
+    confirmed: bool = Field(default=False)
+    soma_user_id: str = Field(min_length=1)
+
+
+class CancelRequest(BaseModel):
+    apply_sn: int = Field(gt=0)
+    qustnr_sn: int = Field(gt=0)
+    confirmed: bool = Field(default=False)
+    soma_user_id: str = Field(min_length=1)
+
+
+@router.post("/{mentoring_id}/apply")
 def apply(
     mentoring_id: int,
-    body: ApplyReq,
+    body: ApplyRequest,
     session_id: SessionId,
     db: DbSession,
     client: SomaClient,
@@ -43,9 +54,9 @@ def apply(
     )
 
 
-@router.post("/cancel", response_model=ActionProposal | ActionResult)
+@router.post("/cancel")
 def cancel(
-    body: CancelReq,
+    body: CancelRequest,
     session_id: SessionId,
     db: DbSession,
     client: SomaClient,

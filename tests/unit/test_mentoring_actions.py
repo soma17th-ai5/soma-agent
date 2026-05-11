@@ -8,9 +8,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.domain.dtos.action import ActionProposal, ActionResult
-from app.domain.orm import Base
-from app.domain.orm.application import Application
+from app.domain.contracts.action import ActionProposal, ActionResult
+from app.domain.models import Base
+from app.domain.models.application import Application
 from app.errors.exceptions import MentoringNotOpen
 from app.services import mentoring as mentoring_service
 

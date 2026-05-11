@@ -14,8 +14,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
-from app.domain.orm import Base
-from app.domain.orm.webex import WebexMessage, WebexRoom
+from app.domain.models import Base
+from app.domain.models.webex import WebexMessage, WebexRoom
 from app.services import webex as webex_sync
 from app.utils import hashing
 

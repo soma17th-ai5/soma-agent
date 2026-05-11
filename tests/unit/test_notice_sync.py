@@ -8,8 +8,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.domain.orm import Base
-from app.domain.orm.notice import Notice
+from app.domain.models import Base
+from app.domain.models.notice import Notice
 from app.services import notice as notice_service
 
 

@@ -2,7 +2,7 @@
 
 도메인 모델 모듈을 import 해 `Base.metadata` 에 모든 ORM 클래스를 등록한 뒤
 Alembic 의 `target_metadata` 로 전달한다. 새 도메인을 추가할 때
-`app/domain/orm/__init__.py` 에서 import 하면 이 파일은 수정 불필요.
+`app/domain/models/__init__.py` 에서 import 하면 이 파일은 수정 불필요.
 """
 from logging.config import fileConfig
 
@@ -10,7 +10,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.config import get_settings
-from app.domain.orm import Base  # 모든 ORM 등록
+from app.domain.models import Base  # 모든 ORM 등록
 
 config = context.config
 

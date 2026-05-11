@@ -8,8 +8,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.domain.orm import Base
-from app.domain.orm.mentoring import Mentoring, MentoringApplicant
+from app.domain.models import Base
+from app.domain.models.mentoring import Mentoring, MentoringApplicant
 from app.services import mentoring as mentoring_service
 
 

@@ -35,7 +35,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.domain.orm import Base
+from app.domain.models import Base
 
 
 class Mentoring(Base):

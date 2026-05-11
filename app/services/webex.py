@@ -26,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters.webex_client import WebexClient
-from app.domain.orm.webex import WebexMessage, WebexRoom
+from app.domain.models.webex import WebexMessage, WebexRoom
 from app.utils.hashing import anonymize_many, anonymize_person_id
 
 logger = structlog.get_logger(__name__)
@@ -36,7 +36,7 @@ _RESCAN_WINDOW = timedelta(hours=24)
 _BOT_EMAIL_SUFFIX = "@webex.bot"
 
 
-@dataclass(slots=True)
+@dataclass
 class SyncStats:
     """`run_sync` 결과 메트릭."""
 

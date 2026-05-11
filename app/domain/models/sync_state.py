@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.domain.orm import Base
+from app.domain.models import Base
 
 
 class SyncState(Base):

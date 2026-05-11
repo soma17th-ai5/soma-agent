@@ -15,7 +15,7 @@ from datetime import datetime
 from sqlalchemy import BigInteger, DateTime, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.domain.orm import Base
+from app.domain.models import Base
 
 
 class Application(Base):
