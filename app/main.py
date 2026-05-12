@@ -15,6 +15,7 @@ from app.errors.handlers import (
 )
 from app.observability.logging import configure_logging, get_logger
 from app.observability.tracing import TraceIdMiddleware
+from app.scheduler import create_scheduler_manager
 
 
 @asynccontextmanager
@@ -23,8 +24,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     log = get_logger("app.main")
     log.info("app.startup", env=settings.app_env, port=settings.app_port)
-    yield
-    log.info("app.shutdown")
+    scheduler_manager = create_scheduler_manager()
+    app.state.scheduler_manager = scheduler_manager
+    scheduler_manager.start()
+    try:
+        yield
+    finally:
+        scheduler_manager.shutdown()
+        log.info("app.shutdown")
 
 
 def create_app() -> FastAPI:

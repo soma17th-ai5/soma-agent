@@ -82,6 +82,29 @@ def test_should_returnWhoamiResult_when_sessionValid() -> None:
     assert result.role == "MENTOR"
 
 
+def test_should_returnOperatorSession_when_sidecarProvidesOne() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/operator/session"
+        return httpx.Response(
+            200,
+            json={
+                "session_id": "operator-sid",
+                "soma_user_id": "operator@example.com",
+                "user_no": "1" * 32,
+                "user_name": "운영자",
+                "role": "MENTOR",
+            },
+        )
+
+    client = make_client(handler)
+    result = client.operator_session()
+
+    assert result.session_id == "operator-sid"
+    assert result.soma_user_id == "operator@example.com"
+    assert result.role == "MENTOR"
+
+
 def test_should_raiseSessionExpired_when_whoamiReturns401() -> None:
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(401, json={"code": "SESSION_EXPIRED", "message": "expired"})
