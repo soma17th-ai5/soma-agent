@@ -16,8 +16,8 @@ erDiagram
 
     applications {
         bigint id PK
-        string soma_user_id FK,UK
-        bigint apply_sn UK
+        string soma_user_id FK "UK: uq_user_apply_sn"
+        bigint apply_sn "UK: uq_user_apply_sn"
         bigint qustnr_sn
         string category
         string title
