@@ -1,4 +1,4 @@
-"""knowledge ask API integration tests with mocked external adapters."""
+"""chat API integration tests with mocked external adapters."""
 from __future__ import annotations
 
 from collections.abc import Generator
@@ -38,10 +38,17 @@ class FakeQdrant:
 
 class FakeChat:
     def __init__(self) -> None:
-        self.messages: list[dict[str, object]] | None = None
+        self.messages: list[list[dict[str, object]]] = []
 
     def chat(self, messages, **kwargs):  # type: ignore[no-untyped-def]
-        self.messages = messages
+        self.messages.append(messages)
+        if len(self.messages) == 1:
+            return ChatResponse(
+                content=(
+                    '{"query":"백엔드 멘토링","source_types":["MENTORING"],'
+                    '"official_only":true,"k":3}'
+                )
+            )
         return ChatResponse(content="백엔드 멘토링으로 테스트 멘토링을 추천합니다.")
 
 
@@ -83,8 +90,8 @@ def test_should_returnAnswerAndSources_when_hitsFound() -> None:
 
     with _client(qdrant, solar, chat) as client:
         res = client.post(
-            "/api/v1/knowledge/ask",
-            json={"query": "백엔드 멘토링 추천해줘", "source_types": ["MENTORING"], "k": 3},
+            "/api/v1/chat",
+            json={"message": "백엔드 멘토링 추천해줘"},
         )
 
     assert res.status_code == 200
@@ -93,8 +100,15 @@ def test_should_returnAnswerAndSources_when_hitsFound() -> None:
     assert body["llm_used"] is True
     assert body["sources"][0]["source_id"] == "10786"
     assert qdrant.calls[0]["source_types"] == ["MENTORING"]
+    assert qdrant.calls[0]["official_only"] is True
+    assert qdrant.calls[0]["room_name"] is None
     assert qdrant.calls[0]["k"] == 3
-    assert chat.messages is not None
+    assert body["metadata"]["resolved_query"] == "백엔드 멘토링"
+    assert body["metadata"]["source_types"] == ["MENTORING"]
+    assert body["metadata"]["official_only"] is True
+    assert body["metadata"]["k"] == 3
+    assert body["metadata"]["router"] == "llm"
+    assert len(chat.messages) == 2
 
 
 def test_should_skipLlm_when_noHitsFound() -> None:
@@ -103,11 +117,81 @@ def test_should_skipLlm_when_noHitsFound() -> None:
     chat = FakeChat()
 
     with _client(qdrant, solar, chat) as client:
-        res = client.post("/api/v1/knowledge/ask", json={"query": "없는 내용"})
+        res = client.post("/api/v1/chat", json={"message": "없는 내용"})
 
     assert res.status_code == 200
     body = res.json()
     assert body["answer"] == "관련 결과를 찾지 못했습니다."
     assert body["sources"] == []
     assert body["llm_used"] is False
-    assert chat.messages is None
+    assert len(chat.messages) == 1
+
+
+def test_should_fallbackToAllSources_when_routerReturnsInvalidJson() -> None:
+    class InvalidRouterChat(FakeChat):
+        def chat(self, messages, **kwargs):  # type: ignore[no-untyped-def]
+            self.messages.append(messages)
+            if len(self.messages) == 1:
+                return ChatResponse(content="not-json")
+            return ChatResponse(content="fallback answer")
+
+    qdrant = FakeQdrant(
+        [
+            _point(
+                chunk_id="n-1-0",
+                source_type="NOTICE",
+                source_id="1",
+                title="공지",
+                text="백엔드 관련 공지",
+                official=True,
+            )
+        ]
+    )
+    solar = FakeSolar()
+    chat = InvalidRouterChat()
+
+    with _client(qdrant, solar, chat) as client:
+        res = client.post("/api/v1/chat", json={"message": "백엔드 알려줘"})
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["answer"] == "fallback answer"
+    assert qdrant.calls[0]["source_types"] is None
+    assert qdrant.calls[0]["official_only"] is False
+    assert qdrant.calls[0]["k"] == 5
+    assert body["metadata"]["router"] == "fallback"
+    assert body["metadata"]["router_error"]
+
+
+def test_shouldClampK_when_routerReturnsOutOfRangeK() -> None:
+    class LargeKRouterChat(FakeChat):
+        def chat(self, messages, **kwargs):  # type: ignore[no-untyped-def]
+            self.messages.append(messages)
+            if len(self.messages) == 1:
+                return ChatResponse(
+                    content='{"query":"공지","source_types":["NOTICE"],"official_only":true,"k":100}'
+                )
+            return ChatResponse(content="공지 답변")
+
+    qdrant = FakeQdrant(
+        [
+            _point(
+                chunk_id="n-1-0",
+                source_type="NOTICE",
+                source_id="1",
+                title="공지",
+                text="공지",
+                official=True,
+            )
+        ]
+    )
+    solar = FakeSolar()
+    chat = LargeKRouterChat()
+
+    with _client(qdrant, solar, chat) as client:
+        res = client.post("/api/v1/chat", json={"message": "공지 전부 알려줘"})
+
+    assert res.status_code == 200
+    body = res.json()
+    assert qdrant.calls[0]["k"] == 20
+    assert body["metadata"]["k"] == 20

@@ -1,4 +1,4 @@
-"""Knowledge RAG endpoints."""
+"""Chat/RAG endpoints."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -10,18 +10,11 @@ from app.api.deps import QdrantDep, SolarChatDep, SolarDep
 from app.domain.contracts.knowledge import KnowledgeSourceType, SearchHit
 from app.services import knowledge_qa
 
-router = APIRouter(prefix="/api/v1/knowledge", tags=["knowledge"])
+router = APIRouter(prefix="/api/v1", tags=["chat"])
 
 
-class KnowledgeAskRequest(BaseModel):
-    query: str = Field(min_length=1, description="질문")
-    source_types: list[KnowledgeSourceType] | None = Field(
-        default=None,
-        description="검색 대상. 예: MENTORING, NOTICE, WEBEX_MESSAGE",
-    )
-    official_only: bool = False
-    room_name: str | None = None
-    k: int = Field(default=5, ge=1, le=20)
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, description="사용자 메시지")
 
 
 class KnowledgeSource(BaseModel):
@@ -37,35 +30,42 @@ class KnowledgeSource(BaseModel):
     room_name: str | None = None
 
 
-class KnowledgeAskResponse(BaseModel):
+class ChatResponse(BaseModel):
     answer: str
     sources: list[KnowledgeSource]
     llm_used: bool
     llm_error: str | None = None
+    metadata: dict[str, object]
 
 
-@router.post("/ask", response_model=KnowledgeAskResponse)
-def ask_knowledge(
-    body: KnowledgeAskRequest,
+@router.post("/chat", response_model=ChatResponse)
+def chat(
+    body: ChatRequest,
     qdrant: QdrantDep,
     solar: SolarDep,
     chat: SolarChatDep,
-) -> KnowledgeAskResponse:
+) -> ChatResponse:
     result = knowledge_qa.ask(
         qdrant,
         solar,
         chat,
-        body.query,
-        source_types=body.source_types,
-        official_only=body.official_only,
-        room_name=body.room_name,
-        k=body.k,
+        body.message,
     )
-    return KnowledgeAskResponse(
+    return ChatResponse(
         answer=result.answer,
         sources=[_source_from_hit(hit) for hit in result.hits],
         llm_used=result.llm_used,
         llm_error=result.llm_error,
+        metadata={
+            "resolved_query": result.resolved_query,
+            "source_types": [source_type.value for source_type in result.source_types]
+            if result.source_types
+            else [],
+            "official_only": result.official_only,
+            "k": result.k,
+            "router": "llm" if result.router_used else "fallback",
+            "router_error": result.router_error,
+        },
     )
 
 
