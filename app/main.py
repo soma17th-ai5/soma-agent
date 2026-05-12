@@ -6,7 +6,6 @@ from fastapi.exceptions import RequestValidationError
 
 from app.adapters.opensoma_client import OpenSomaClientError
 from app.api import application, auth, health, mentoring
-from app.api import scheduler as scheduler_api
 from app.config import get_settings
 from app.errors.exceptions import BaseAPIException
 from app.errors.handlers import (
@@ -48,7 +47,6 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(mentoring.router)
     app.include_router(application.router)
-    app.include_router(scheduler_api.router)
     return app
 
 
