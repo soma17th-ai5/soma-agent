@@ -5,6 +5,7 @@ import { toSidecarError } from './error_mapping'
 import { applicationRouter } from './routes/application'
 import { mentoringRouter } from './routes/mentoring'
 import { noticeRouter } from './routes/notice'
+import { operatorRouter } from './routes/operator'
 import { sessionsRouter, whoamiRouter } from './routes/sessions'
 import { sessionStore } from './session_store'
 
@@ -21,6 +22,7 @@ export function createApp(): Hono {
   app.route('/notice', noticeRouter)
   app.route('/mentoring', mentoringRouter)
   app.route('/application', applicationRouter)
+  app.route('/operator', operatorRouter)
 
   app.onError((err, c) => {
     const e = toSidecarError(err)

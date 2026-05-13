@@ -112,6 +112,22 @@ class OpenSomaClient:
             role=data.get("role") or "TRAINEE",
         )
 
+    def operator_session(self) -> LoginResult:
+        """sidecar가 관리하는 OpenSoma 운영자 세션 핸들을 반환.
+
+        운영자 ID/PW와 실제 OpenSoma 쿠키는 sidecar 안에만 머문다.
+        """
+        resp = self._http.get("/operator/session")
+        _raise_for_error(resp)
+        data = resp.json()
+        return LoginResult(
+            session_id=data["session_id"],
+            soma_user_id=data["soma_user_id"],
+            user_no=data["user_no"],
+            user_name=data.get("user_name"),
+            role=data.get("role") or "TRAINEE",
+        )
+
     # --- 공지 -----------------------------------------------------------
 
     def notice_list(self, session_id: str, page: int = 1) -> dict[str, Any]:

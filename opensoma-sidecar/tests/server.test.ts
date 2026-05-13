@@ -88,6 +88,24 @@ describe('sessions', () => {
   })
 })
 
+describe('operator session', () => {
+  it('should_return_503_when_operator_credentials_missing', async () => {
+    const oldUsername = process.env.OPERATOR_SOMA_USERNAME
+    const oldPassword = process.env.OPERATOR_SOMA_PASSWORD
+    delete process.env.OPERATOR_SOMA_USERNAME
+    delete process.env.OPERATOR_SOMA_PASSWORD
+    try {
+      const res = await app.request('/operator/session')
+      expect(res.status).toBe(503)
+      const body = await jsonOf(res)
+      expect(body.code).toBe('OPERATOR_SESSION_UNAVAILABLE')
+    } finally {
+      if (oldUsername !== undefined) process.env.OPERATOR_SOMA_USERNAME = oldUsername
+      if (oldPassword !== undefined) process.env.OPERATOR_SOMA_PASSWORD = oldPassword
+    }
+  })
+})
+
 describe('cancel validation', () => {
   it('should_return_422_when_cancel_body_missing_keys', async () => {
     const res = await app.request('/mentoring/cancel', {

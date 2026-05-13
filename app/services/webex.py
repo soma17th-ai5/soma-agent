@@ -13,21 +13,27 @@
 수정/삭제 한계: SPEC §7.4 — Compliance Events API 가 없으므로 24h 윈도우
 재조회로 `edited_at` 변경분만 흡수. 삭제는 v2 Webhook.
 
-이번 이슈 범위는 RDB 저장 + 익명화까지. Qdrant 인덱싱은 #15.
+이번 이슈 범위는 RDB 저장 + 익명화 + Qdrant 인덱싱.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters.webex_client import WebexClient
+from app.domain.contracts.knowledge import KnowledgeSourceType
 from app.domain.models.webex import WebexMessage, WebexRoom
+from app.services.rag_indexer import index_chunks
 from app.utils.hashing import anonymize_many, anonymize_person_id
+
+if TYPE_CHECKING:
+    from app.adapters.qdrant_client import QdrantAdapter
+    from app.adapters.solar_client import SolarClient
 
 logger = structlog.get_logger(__name__)
 
@@ -44,14 +50,24 @@ class SyncStats:
     rooms_skipped: int = 0
     messages_inserted: int = 0
     messages_updated: int = 0
+    messages_indexed: int = 0
 
 
-def run_sync(db: Session, client: WebexClient, *, now: datetime | None = None) -> SyncStats:
+def run_sync(
+    db: Session,
+    client: WebexClient,
+    *,
+    qdrant: QdrantAdapter | None = None,
+    solar: SolarClient | None = None,
+    now: datetime | None = None,
+) -> SyncStats:
     """Webex 동기화 1회 실행. SPEC §7.4 진입점.
 
     Args:
         db: SQLAlchemy 세션 (sync).
         client: Webex API 어댑터.
+        qdrant: Qdrant 어댑터 (인덱싱용).
+        solar: Solar API 어댑터 (임베딩용).
         now: 현재 시각 (테스트에서 주입). 기본은 UTC now.
 
     Returns:
@@ -72,6 +88,7 @@ def run_sync(db: Session, client: WebexClient, *, now: datetime | None = None) -
 
         room_inserted = 0
         room_updated = 0
+        room_indexed = 0
         for msg_payload in client.list_messages(room_id=room.room_id):
             created_at = _parse_iso(msg_payload.get("created"))
             if created_at and created_at < cutoff:
@@ -83,8 +100,24 @@ def run_sync(db: Session, client: WebexClient, *, now: datetime | None = None) -
             room_inserted += int(inserted)
             room_updated += int(updated)
 
+            # 신규 또는 수정된 메시지면 Qdrant 인덱싱 수행
+            if (inserted or updated) and qdrant and solar and msg_payload.get("text"):
+                index_chunks(
+                    qdrant,
+                    solar,
+                    source_type=KnowledgeSourceType.WEBEX_MESSAGE,
+                    source_id=msg_payload["id"],
+                    title=f"Message in {room.room_name}",
+                    texts=[msg_payload.get("text")],
+                    official=False,
+                    room_name=room.room_name,
+                    created_at=created_at,
+                )
+                room_indexed += 1
+
         stats.messages_inserted += room_inserted
         stats.messages_updated += room_updated
+        stats.messages_indexed += room_indexed
 
         # 워터마크는 last_activity_at 과 now 중 더 큰 값 (SPEC §7.4).
         room.last_synced_at = (
@@ -107,6 +140,7 @@ def run_sync(db: Session, client: WebexClient, *, now: datetime | None = None) -
         rooms_skipped=stats.rooms_skipped,
         messages_inserted=stats.messages_inserted,
         messages_updated=stats.messages_updated,
+        messages_indexed=stats.messages_indexed,
     )
     return stats
 
@@ -260,10 +294,9 @@ def _detect_bot(person_email: str | None) -> bool:
 
 
 def _calc_cutoff(last_synced_at: datetime | None, now: datetime) -> datetime:
-    """24h 재조회 윈도우. last_synced_at 없으면 매우 오래전(epoch)으로."""
+    """24h 재조회 윈도우. 첫 동기화도 최근 24시간만 수집한다."""
     if last_synced_at is None:
-        # 첫 동기화 — 모든 메시지 수집. cutoff 를 epoch로 두어 break 하지 않게.
-        return datetime(1970, 1, 1, tzinfo=now.tzinfo)
+        return now - _RESCAN_WINDOW
     return last_synced_at - _RESCAN_WINDOW
 
 

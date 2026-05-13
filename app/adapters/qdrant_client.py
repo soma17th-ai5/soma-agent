@@ -133,6 +133,16 @@ class QdrantAdapter:
             points_selector=qm.FilterSelector(filter=flt),
         )
 
+    def source_exists(self, source_type: str, source_id: str) -> bool:
+        """(source_type, source_id)에 해당하는 청크가 하나라도 있는지 확인."""
+        flt = _source_filter(source_type, source_id)
+        result = self._client.count(
+            collection_name=self._collection,
+            count_filter=flt,
+            exact=True,
+        )
+        return result.count > 0
+
     # --- Search -----------------------------------------------------------
 
     def search(
@@ -190,3 +200,12 @@ def _build_search_filter(
     if not must:
         return None
     return qm.Filter(must=must)
+
+
+def _source_filter(source_type: str, source_id: str) -> qm.Filter:
+    return qm.Filter(
+        must=[
+            qm.FieldCondition(key="source_type", match=qm.MatchValue(value=source_type)),
+            qm.FieldCondition(key="source_id", match=qm.MatchValue(value=source_id)),
+        ]
+    )

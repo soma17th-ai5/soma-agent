@@ -1,7 +1,7 @@
 """멘토링 동기화 서비스. SPEC §7.3.
 
-mentoring_list (운영자 세션) → content_hash 비교 → 변경분만 detail 조회 →
-MySQL upsert (mentorings + mentoring_applicants HMAC) → Qdrant 인덱싱.
+mentoring_list (운영자 세션) → content_hash 비교 →
+MySQL upsert (mentorings 목록 필드) → Qdrant 목록 인덱싱.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from datetime import date, datetime, time
 from typing import Any
 
 from bs4 import BeautifulSoup
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters.opensoma_client import OpenSomaClient
@@ -23,7 +23,7 @@ from app.adapters.qdrant_client import QdrantAdapter
 from app.adapters.solar_client import SolarClient
 from app.config import get_settings
 from app.domain.contracts.knowledge import KnowledgeSourceType
-from app.domain.models.mentoring import Mentoring, MentoringApplicant
+from app.domain.models.mentoring import Mentoring
 from app.services.rag_indexer import index_chunks
 
 log = logging.getLogger("app.services.mentoring")
@@ -37,6 +37,7 @@ class MentoringSyncStats:
     skipped: int = 0
     applicants_persisted: int = 0
     indexed: int = 0
+    removed_from_index: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -113,8 +114,10 @@ def run_sync(
     qdrant: QdrantAdapter | None = None,
     solar: SolarClient | None = None,
     max_pages: int = 50,
+    today: date | None = None,
 ) -> MentoringSyncStats:
     stats = MentoringSyncStats()
+    index_from_date = today or date.today()
 
     for page in range(1, max_pages + 1):
         payload = opensoma.mentoring_list(session_id, page=page)
@@ -127,7 +130,7 @@ def run_sync(
         for item in items:
             stats.fetched += 1
             try:
-                _process_item(item, db, opensoma, session_id, qdrant, solar, stats)
+                _process_item(item, db, qdrant, solar, stats, index_from_date)
             except Exception as exc:
                 log.exception("mentoring.sync_item_failed id=%s", item.get("id"))
                 stats.errors.append(f"mentoring_id={item.get('id')}: {exc}")
@@ -143,79 +146,103 @@ def run_sync(
 def _process_item(
     item: dict[str, Any],
     db: Session,
-    opensoma: OpenSomaClient,
-    session_id: str,
     qdrant: QdrantAdapter | None,
     solar: SolarClient | None,
     stats: MentoringSyncStats,
+    index_from_date: date,
 ) -> None:
     mentoring_id = int(item["id"])
     new_hash = _compute_content_hash(item)
+    should_index = _should_index_item(item, index_from_date)
 
     existing = db.execute(
         select(Mentoring).where(Mentoring.mentoring_id == mentoring_id)
     ).scalar_one_or_none()
 
     if existing and existing.content_hash == new_hash:
+        if existing.is_active != should_index:
+            existing.is_active = should_index
+            stats.updated += 1
+        if qdrant is not None and not should_index:
+            qdrant.delete_by_source(KnowledgeSourceType.MENTORING.value, str(mentoring_id))
+            stats.removed_from_index += 1
+        elif (
+            qdrant is not None
+            and solar is not None
+            and should_index
+            and not qdrant.source_exists(KnowledgeSourceType.MENTORING.value, str(mentoring_id))
+        ):
+            _index_item(item, mentoring_id, qdrant, solar, stats)
         stats.skipped += 1
         return
 
-    # 변경 감지 → detail 조회
-    detail = opensoma.mentoring_get(session_id, mentoring_id)
-    fields = _flatten_fields(item, detail)
+    fields = _flatten_list_fields(item)
 
     if existing is None:
-        mentoring = Mentoring(mentoring_id=mentoring_id, content_hash=new_hash, **fields)
+        mentoring = Mentoring(
+            mentoring_id=mentoring_id,
+            content_hash=new_hash,
+            is_active=should_index,
+            **fields,
+        )
         db.add(mentoring)
         stats.inserted += 1
     else:
         for k, v in fields.items():
             setattr(existing, k, v)
         existing.content_hash = new_hash
-        existing.is_active = True
+        existing.is_active = should_index
         mentoring = existing
         stats.updated += 1
 
     db.flush()
 
-    # applicants 갱신: 항상 전체 교체
-    db.execute(
-        delete(MentoringApplicant).where(MentoringApplicant.mentoring_id == mentoring_id)
-    )
-    for applicant in detail.get("applicants") or []:
-        name = applicant.get("name") or ""
-        if not name:
-            continue
-        db.add(
-            MentoringApplicant(
-                mentoring_id=mentoring_id,
-                applicant_name_hash=_hash_applicant_name(name),
-                applied_at_text=applicant.get("appliedAt"),
-                cancelled_at_text=applicant.get("cancelledAt"),
-                applicant_status=applicant.get("status"),
-            )
-        )
-        stats.applicants_persisted += 1
+    if qdrant is not None and not should_index:
+        qdrant.delete_by_source(KnowledgeSourceType.MENTORING.value, str(mentoring_id))
+        stats.removed_from_index += 1
+        return
 
     if qdrant is not None and solar is not None:
-        text = _searchable_text(item, detail)
-        if text:
-            index_chunks(
-                qdrant,
-                solar,
-                source_type=KnowledgeSourceType.MENTORING,
-                source_id=str(mentoring_id),
-                title=item["title"],
-                texts=[text],
-                official=True,
-                source_url=item.get("url"),
-                created_at=_parse_iso_datetime(item.get("createdAt")),
-            )
-            stats.indexed += 1
+        _index_item(item, mentoring_id, qdrant, solar, stats)
 
 
-def _flatten_fields(item: dict[str, Any], detail: dict[str, Any]) -> dict[str, Any]:
-    """list item + detail의 객체 필드를 우리 컬럼으로 평탄화."""
+def _should_index_item(item: dict[str, Any], index_from_date: date) -> bool:
+    session_date = _parse_iso_date(item.get("sessionDate"))
+    if session_date is None:
+        return False
+    return session_date >= index_from_date
+
+
+def _index_item(
+    item: dict[str, Any],
+    mentoring_id: int,
+    qdrant: QdrantAdapter,
+    solar: SolarClient,
+    stats: MentoringSyncStats,
+) -> None:
+    text = _searchable_text(item)
+    if not text:
+        return
+    index_chunks(
+        qdrant,
+        solar,
+        source_type=KnowledgeSourceType.MENTORING,
+        source_id=str(mentoring_id),
+        title=item["title"],
+        texts=[text],
+        official=True,
+        source_url=item.get("url"),
+        created_at=_parse_iso_datetime(item.get("createdAt")),
+    )
+    stats.indexed += 1
+
+
+def _flatten_list_fields(item: dict[str, Any]) -> dict[str, Any]:
+    """list item의 객체 필드를 우리 컬럼으로 평탄화.
+
+    상세 조회로만 알 수 있는 content_html, venue, applicants는 목록 sync에서
+    건드리지 않는다. 나중에 상세 조회로 채워진 값을 보존하기 위해서다.
+    """
     reg = item.get("registrationPeriod") or {}
     session_t = item.get("sessionTime") or {}
     att = item.get("attendees") or {}
@@ -242,20 +269,18 @@ def _flatten_fields(item: dict[str, Any], detail: dict[str, Any]) -> dict[str, A
         "mentoring_status": item.get("status"),
         "author": item.get("author"),
         "created_at_text": item.get("createdAt"),
-        "content_html": detail.get("content"),
-        "venue": detail.get("venue"),
+        "detail_url": item.get("url"),
     }
 
 
-def _searchable_text(item: dict[str, Any], detail: dict[str, Any]) -> str:
-    """RAG 인덱싱용 합성 텍스트."""
+def _searchable_text(item: dict[str, Any]) -> str:
+    """RAG 인덱싱용 목록 기반 합성 텍스트."""
     parts = [
         item.get("title") or "",
         item.get("type") or "",
         item.get("author") or "",
-        detail.get("venue") or "",
+        item.get("status") or "",
         item.get("sessionDate") or "",
-        _strip_html(detail.get("content")),
     ]
     return "\n".join(p for p in parts if p)
 

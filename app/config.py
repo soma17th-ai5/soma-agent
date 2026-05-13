@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     sync_notices_cron: str = "*/30 * * * *"
     sync_mentorings_cron: str = "*/30 * * * *"
     sync_webex_cron: str = "0 * * * *"
+    scheduler_enabled: bool = True
+    scheduler_timezone: str = "Asia/Seoul"
+    scheduler_admin_token: str = ""
 
     calendar_mock_fail_rate: float = 0.0
 

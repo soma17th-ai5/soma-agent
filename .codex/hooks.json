@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/insung/Documents/GitHub/soma-agent/.codex/hooks/pre-tool-use.sh'",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/insung/Documents/GitHub/soma-agent/.codex/hooks/stop.sh'",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
